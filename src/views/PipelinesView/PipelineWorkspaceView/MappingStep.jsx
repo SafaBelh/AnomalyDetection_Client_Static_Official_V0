@@ -5,13 +5,13 @@ import { useState } from "react";
 import { Check, TriangleAlert } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner";
 import { parseCSV, wsAPI, wsStore } from "@/store/wsAPI";
+import { WS_MAPPING_CORE_FIELDS, WS_MAPPING_DEMO_COLUMNS } from "@/store/staticData";
 import { autoDetect } from "@/views/PipelinesView/PipelineWorkspaceView/utils";
 
 export function WSMappingStep({ uploadData, onConfirm, onNavigate, manageMode = false }) {
   // Prefer uploadData from previous upload step; fall back to headers stored in
   // wsStore by the pipeline-creation modal CSV import (new flow, no upload step).
-  const DEMO_COLUMNS = ["invoice_ref", "invoice_date", "amount", "supplier_code", "label", "entity", "status", "due_date"];
-  const headers = uploadData?.columns || wsStore.csvHeaders || DEMO_COLUMNS;
+  const headers = uploadData?.columns || wsStore.csvHeaders || WS_MAPPING_DEMO_COLUMNS;
   const detected = autoDetect(headers);
   const [cols, setCols] = useState(detected);
   const [extraCols, setExtraCols] = useState([]);
@@ -34,45 +34,7 @@ export function WSMappingStep({ uploadData, onConfirm, onNavigate, manageMode = 
   const availableForExtra = headers.filter((h) => !reservedCols.has(h));
   const toggleExtra = (h) =>
     setExtraCols((e) => (e.includes(h) ? e.filter((x) => x !== h) : [...e, h]));
-  const CORE = [
-    {
-      k: "amount",
-      lbl: "Montant",
-      req: true,
-      hint: "Valeur numérique de la facture",
-    },
-    {
-      k: "date",
-      lbl: "Date facture",
-      req: true,
-      hint: "Date d'émission ou de comptabilisation",
-    },
-    {
-      k: "supplier",
-      lbl: "Fournisseur",
-      req: true,
-      hint: "Code ou nom du tiers / fournisseur",
-    },
-    {
-      k: "label",
-      lbl: "Libellé / Service",
-      req: false,
-      hint: "Sous-catégorie, service ou description",
-    },
-    {
-      k: "tenant",
-      lbl: "Entité / Société",
-      req: false,
-      hint: "Code société ou entité juridique",
-    },
-    { k: "status", lbl: "Statut", req: false, hint: "Statut de la pièce" },
-    {
-      k: "docref",
-      lbl: "Réf. document",
-      req: false,
-      hint: "Numéro ou référence de la pièce",
-    },
-  ];
+  const CORE = WS_MAPPING_CORE_FIELDS;
   const sampleVals = (col) => {
     if (!col || !sampleRows.length) return [];
     return [

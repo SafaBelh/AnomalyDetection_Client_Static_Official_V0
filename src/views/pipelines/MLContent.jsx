@@ -5,6 +5,7 @@ import { CustomTip } from "@/components/ui/CustomTip";
 import { Icon } from "@/components/ui/Icon";
 import { C, CC } from "@/constants/colors";
 import { getPipeline, invoicesForTenant, runMLAnalysis } from "@/store/db";
+import { ML_RADAR_METRICS } from "@/store/staticData";
 import { wsAPI, wsEnsureSeries, wsStore } from "@/store/wsAPI";
 import { fmtE, fmtK } from "@/utils/formatters";
 
@@ -130,13 +131,7 @@ export function MLContent({ pipeline }) {
   const wsTop5 = wsSupBarData.slice(0, 5).map((s) => s.id);
   const wsMaxCount = Math.max(...wsSupBarData.map((s) => s.count), 1);
 
-  const wsRadarData = [
-    { metric: "Volume", fullMark: 100 },
-    { metric: "Stabilité CV", fullMark: 100 },
-    { metric: "Taille série", fullMark: 100 },
-    { metric: "Tolérance", fullMark: 100 },
-    { metric: "Score anomalie", fullMark: 100 },
-  ].map((row) => {
+  const wsRadarData = ML_RADAR_METRICS.map((row) => {
     const obj = { ...row };
     wsTop5.forEach((id) => {
       const sd = wsSupBarData.find((s) => s.id === id);

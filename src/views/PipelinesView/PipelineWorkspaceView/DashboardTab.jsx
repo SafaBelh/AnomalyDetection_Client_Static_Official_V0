@@ -6,6 +6,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { CustomTip } from "@/components/ui/CustomTip";
 import { Spinner } from "@/components/ui/Spinner";
 import { C, CC, RC } from "@/constants/colors";
+import { PIPELINE_DASHBOARD_RADAR_METRICS } from "@/store/staticData";
 import { wsAPI } from "@/store/wsAPI";
 import { fmtE, fmtK, supColor } from "@/utils/formatters";
 
@@ -243,13 +244,7 @@ export function WSFullDashboard({
     }),
     1
   );
-  const radarData = [
-    { metric: "Volume (factures)", fullMark: 100 },
-    { metric: "Stabilité (CV)", fullMark: 100 },
-    { metric: "Alertes actives", fullMark: 100 },
-    { metric: "Taille série", fullMark: 100 },
-    { metric: "Tolérance", fullMark: 100 },
-  ].map((row) => {
+  const radarData = PIPELINE_DASHBOARD_RADAR_METRICS.map((row) => {
     const obj = { ...row };
     top5.forEach((id) => {
       const sd = supBarData.find((s) => s.id === id);

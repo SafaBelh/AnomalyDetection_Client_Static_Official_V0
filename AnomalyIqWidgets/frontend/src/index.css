@@ -1,0 +1,70 @@
+/* ── CSS Variable defaults (overridden by ThemeProvider) ── */
+:root {
+  --anomaly-primary-color: #D94F3D;
+  --anomaly-primary-dark: #C84332;
+  --anomaly-accent-color: #f59e0b;
+  --anomaly-background: #F0EDE8;
+  --anomaly-surface: rgba(255,255,255,0.72);
+  --anomaly-surface-hover: rgba(217,79,61,0.04);
+  --anomaly-text-primary: #18191C;
+  --anomaly-text-secondary: #525761;
+  --anomaly-text-muted: #9CA3AF;
+  --anomaly-border-color: rgba(255,255,255,0.88);
+  --anomaly-border-radius: 16px;
+  --anomaly-danger: #D94F3D;
+  --anomaly-success: #22c55e;
+  --anomaly-warning: #f59e0b;
+  --anomaly-info: #38bdf8;
+  --anomaly-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --anomaly-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* ── Reset ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background: var(--anomaly-background);
+  color: var(--anomaly-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  transition: background 0.25s, color 0.25s;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--anomaly-background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--anomaly-border-color);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--anomaly-text-muted);
+}
+
+/* ── Transitions for theming ── */
+div, section, header, button, input, select, textarea, table, td, th, span, p, h1, h2, h3, h4 {
+  transition: background-color 0.2s, border-color 0.2s, color 0.15s;
+}
+
+/* ── Utility ── */
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+}

@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { INVOICES_TABLE, COMMANDES_FRONTEND_TABLE, COMMAND_BUDGET_SERIES_TABLE, HISTORICAL_INVOICES_TABLE } from "@/store/staticData";
+import { INVOICES_TABLE, COMMANDES_FRONTEND_TABLE, COMMAND_BUDGET_SERIES_TABLE, HISTORICAL_INVOICES_TABLE, MONTH_NAMES_FR, BUDGET_TABS } from "@/store/staticData";
 import { useAuth, visibleTenants } from "@/store/db";
 import { BarChart3, Brain, Flag, Lightbulb, Search, TriangleAlert, Waves, Globe, TrendingUp, TrendingDown, AlertTriangle, Building2, ChevronRight } from "lucide-react";
 
@@ -47,10 +47,7 @@ const FAKE_COMMANDES = COMMANDES_FRONTEND_TABLE;
 /* ─────────────────────────────────────────────────────────────
    CONSTANTS & HELPERS
 ───────────────────────────────────────────────────────────── */
-const MONTH_NAMES = [
-  "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
-];
+const MONTH_NAMES = MONTH_NAMES_FR;
 const monthName = (i) => MONTH_NAMES[i] || String(i + 1);
 const monthShort = (i) => (MONTH_NAMES[i]?.slice(0, 3)) || String(i + 1);
 
@@ -1931,12 +1928,7 @@ export function BudgetView() {
     });
   }, []);
 
-  const TABS = [
-    { id: "suivi", label: "Suivi budgétaire" },
-    { id: "serie", label: "Analyse par série" },
-    { id: "simulation", label: "Simulation budget" },
-    { id: "commandes", label: "Budget Commandes" },
-  ];
+  const TABS = BUDGET_TABS;
 
   return (
     <div style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 20, animation: "fadeSlideUp .45s cubic-bezier(.22,1,.36,1) both" }}>

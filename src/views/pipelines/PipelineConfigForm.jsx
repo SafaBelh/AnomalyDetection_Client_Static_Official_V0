@@ -4,6 +4,7 @@ import { ArrowRight, Check, CheckCircle, CheckCircle2, ChevronLeft, Clock, Datab
 import { Spinner } from "@/components/ui/Spinner";
 import { C } from "@/constants/colors";
 import { createPipelineStore, updatePipelineStore, useAuth, partnersForTenant, visibleTenants } from "@/store/db";
+import { CSV_IMPORT_SEQUENCE, PIPELINE_CSV_FIXTURES } from "@/store/staticData";
 import { parseCSV, wsAPI, wsStore } from "@/store/wsAPI";
 
 /* ─────────────────────────────────────────────────────────
@@ -205,43 +206,6 @@ export function PipelineConfigForm({
   const [csvDetectedFields, setCsvDetectedFields] = useState([]);
   const csvDropRef = useRef();
 
-  const CSV_IMPORT_SEQUENCE = [
-    { delay: 0, text: "$ anomalyiq import --source csv --validate", color: "#a8d8a8" },
-    { delay: 320, text: "  Lecture du fichier…", color: "#94a3b8" },
-    { delay: 700, text: "  Parsing en-têtes CSV…", color: "#94a3b8" },
-    { delay: 1100, text: "  ✔ En-têtes détectés :", color: "#4ade80" },
-    { delay: 1350, text: "__FIELDS__", color: "#60a5fa" },
-    { delay: 1700, text: "  Validation des types…", color: "#94a3b8" },
-    { delay: 2100, text: "  ✔ Colonnes montant   → numeric (float64)", color: "#4ade80" },
-    { delay: 2400, text: "  ✔ Colonnes date      → datetime", color: "#4ade80" },
-    { delay: 2700, text: "  ✔ Colonnes fournisseur → string", color: "#4ade80" },
-    { delay: 3000, text: "  Chargement dans la mémoire pipeline…", color: "#94a3b8" },
-    { delay: 3400, text: "__ROWS__", color: "#f9a8d4" },
-    { delay: 3800, text: "  ✔ Import terminé avec succès", color: "#4ade80" },
-    { delay: 4000, text: "  Pipeline prêt — passez à la connexion ↓", color: "#fbbf24" },
-  ];
-
-  const CSV_FIXTURES = [
-    {
-      name: "Factures Ask&Go mixed quality",
-      file: "askgo_factures_mixed_quality.csv",
-      desc: "Factures avec doublons, valeurs manquantes, invalid dates, tenant_red.",
-      mapping: "invoice_ref -> ID, invoice_date -> date, supplier_name -> fournisseur, amount -> montant, category -> label, status -> statut",
-    },
-    {
-      name: "Commandes budget 2026",
-      file: "askgo_commandes_budget_2026.csv",
-      desc: "Commandes avec budget_code, projection BUDGET_FOURN, ligne invalide.",
-      mapping: "commande_id -> reference, commande_date -> date, vendor -> fournisseur, amount -> montant, budget_code -> budgetCode, status -> statut",
-    },
-    {
-      name: "Generic expenses quality cases",
-      file: "generic_expenses_quality_cases.csv",
-      desc: "Colonnes differentes pour tester mapping et nettoyage generique.",
-      mapping: "record_id -> ID, date_posted -> date, vendor_name -> fournisseur, gross_amount -> montant, expense_type -> label, approval_state -> statut",
-    },
-  ];
-
   const runCsvTerminal = useCallback((fields, rowCount) => {
     setCsvImportPhase("importing");
     setCsvImportLines([]);
@@ -302,7 +266,7 @@ export function PipelineConfigForm({
   );
 
   const loadCsvDemo = useCallback(async () => {
-    const fixture = CSV_FIXTURES[0];
+    const fixture = PIPELINE_CSV_FIXTURES[0];
     const res = await fetch(`/sample-data/${fixture.file}`);
     const text = await res.text();
     const { headers, rows } = parseCSV(text);
@@ -789,7 +753,7 @@ export function PipelineConfigForm({
                   </a>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
-                  {CSV_FIXTURES.map((fixture) => (
+                  {PIPELINE_CSV_FIXTURES.map((fixture) => (
                     <div key={fixture.file} style={{ border: `1px solid ${C.grey200}`, borderRadius: 10, padding: 10, background: "#fff", display: "flex", flexDirection: "column", gap: 7 }}>
                       <div style={{ fontSize: 11, fontWeight: 800, color: C.grey900 }}>{fixture.name}</div>
                       <div style={{ fontSize: 10, color: C.grey500, lineHeight: 1.45 }}>{fixture.desc}</div>

@@ -16,7 +16,7 @@ import {
   useStore,
   visibleTenants,
 } from "@/store/db";
-import { ALERTS_TABLE, BUDGETS_TABLE, DEMO_CONNECTORS, PIPELINES_TABLE, SETTINGS_DEFAULTS, SETTINGS_OPTIONS, TENANT_CONNECTIONS_TABLE } from "@/store/staticData";
+import { ALERTS_TABLE, BUDGETS_TABLE, DEMO_CONNECTORS, PIPELINES_TABLE, SETTINGS_DEFAULTS, SETTINGS_OPTIONS, STATIC_DATA_REPORT, TENANT_CONNECTIONS_TABLE } from "@/store/staticData";
 
 function Card({ children }) {
   return (
@@ -88,6 +88,56 @@ function Select({ value, onChange, options }) {
     <select value={value} onChange={(e) => onChange(e.target.value)} className="input-field" style={{ minWidth: 170, fontSize: 12 }}>
       {options.map((option) => <option key={option[0]} value={option[0]}>{option[1]}</option>)}
     </select>
+  );
+}
+
+function stringifyDetail(value) {
+  if (value === null || value === undefined) return "-";
+  if (["string", "number", "boolean"].includes(typeof value)) return String(value);
+  return JSON.stringify(value, (key, item) => (typeof item === "function" ? `[Function ${item.name || "anonymous"}]` : item), 2);
+}
+
+function StaticDataReportTable({ table }) {
+  return (
+    <details style={{ border: `1px solid ${C.grey100}`, borderRadius: 14, background: "#fff", overflow: "hidden" }}>
+      <summary style={{ cursor: "pointer", padding: "12px 14px", display: "grid", gridTemplateColumns: "minmax(170px,1fr) 90px 1.5fr", gap: 12, alignItems: "center", listStyle: "none" }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 900, color: C.grey900, fontFamily: "'JetBrains Mono',monospace" }}>{table.label}</div>
+          <div style={{ fontSize: 10, color: C.grey500, marginTop: 3 }}>{table.section}</div>
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: C.red }}>{table.rowCount.toLocaleString("fr-FR")} lignes</div>
+        <div style={{ fontSize: 11, color: C.grey600, lineHeight: 1.4 }}>{table.description}</div>
+      </summary>
+      <div style={{ borderTop: `1px solid ${C.grey100}`, padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {table.columns.map((column) => (
+            <span key={column} style={{ fontSize: 10, fontWeight: 800, color: C.grey700, background: C.grey50, border: `1px solid ${C.grey100}`, borderRadius: 999, padding: "4px 8px", fontFamily: "'JetBrains Mono',monospace" }}>{column}</span>
+          ))}
+        </div>
+        <div style={{ maxHeight: 360, overflow: "auto", border: `1px solid ${C.grey100}`, borderRadius: 12 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+            <thead>
+              <tr style={{ background: C.grey50 }}>
+                <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 10, color: C.grey500, width: 54 }}>#</th>
+                {table.columns.map((column) => (
+                  <th key={column} style={{ textAlign: "left", padding: "8px 10px", fontSize: 10, color: C.grey500, fontFamily: "'JetBrains Mono',monospace" }}>{column}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {table.rows.map((row, rowIndex) => (
+                <tr key={`${table.id}-${rowIndex}`} style={{ borderTop: `1px solid ${C.grey100}` }}>
+                  <td style={{ padding: "8px 10px", fontSize: 11, color: C.grey400, verticalAlign: "top" }}>{rowIndex + 1}</td>
+                  {table.columns.map((column) => (
+                    <td key={column} style={{ padding: "8px 10px", fontSize: 11, color: C.grey800, verticalAlign: "top", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "pre-wrap", maxWidth: 360 }}>{stringifyDetail(row[column])}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -179,6 +229,20 @@ export function SettingsView() {
 
   const activePipelineCount = settingsPipelines.filter((p) => p.status === "actif" || p.status === "ACTIVE" || p.active).length;
   const unreadAlerts = settingsAlerts.filter((a) => a.status !== "READ" && a.status !== "RESOLVED").length;
+  const staticDataRowCount = STATIC_DATA_REPORT.reduce((sum, table) => sum + table.rowCount, 0);
+  const staticDataColumnCount = STATIC_DATA_REPORT.reduce((sum, table) => sum + table.columns.length, 0);
+
+  const exportStaticDataReport = () => {
+    const payload = stringifyDetail(STATIC_DATA_REPORT);
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "static-data-report.json";
+    link.click();
+    URL.revokeObjectURL(url);
+    toast("Rapport staticData exporte", "success");
+  };
 
   const renderContent = () => {
     if (activeSection === "profil_admin") {
@@ -365,10 +429,29 @@ export function SettingsView() {
       return (
         <Card>
           <SectionHeader icon="shield" title="Donnees" />
-          <Field label="Source" value="Donnees statiques mock" />
-          <Field label="Tenants" value={tenants.length.toLocaleString("fr-FR")} />
-          <Field label="Connecteurs" value={DEMO_CONNECTORS.length.toLocaleString("fr-FR")} />
-          <Field label={isPlatformSettings ? "Budgets" : "Budgets tenant"} value={settingsBudgets.length.toLocaleString("fr-FR")} last />
+          <StatGrid items={[
+            { label: "Tables staticData", value: STATIC_DATA_REPORT.length.toLocaleString("fr-FR") },
+            { label: "Lignes detaillees", value: staticDataRowCount.toLocaleString("fr-FR") },
+            { label: "Colonnes exposees", value: staticDataColumnCount.toLocaleString("fr-FR") },
+          ]} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 12, marginTop: 16 }}>
+            <div style={{ border: `1px solid ${C.grey100}`, borderRadius: 12, padding: 12, background: C.grey50 }}>
+              <Field label="Source" value="src/store/staticData.js" mono />
+              <Field label="Tenants" value={tenants.length.toLocaleString("fr-FR")} />
+              <Field label="Connecteurs" value={DEMO_CONNECTORS.length.toLocaleString("fr-FR")} />
+              <Field label={isPlatformSettings ? "Budgets" : "Budgets tenant"} value={settingsBudgets.length.toLocaleString("fr-FR")} last />
+            </div>
+            <div style={{ border: `1px solid ${C.grey100}`, borderRadius: 12, padding: 12, background: "rgba(217,79,61,.05)", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: C.grey900 }}>Rapport complet staticData</div>
+                <div style={{ fontSize: 11, color: C.grey600, lineHeight: 1.5, marginTop: 4 }}>Toutes les tables, colonnes, nombres de lignes et chaque ligne detaillee sont lus depuis le store central.</div>
+              </div>
+              <button type="button" className="btn-primary" onClick={exportStaticDataReport} style={{ alignSelf: "flex-start" }}>Exporter JSON</button>
+            </div>
+          </div>
+          <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+            {STATIC_DATA_REPORT.map((table) => <StaticDataReportTable key={table.id} table={table} />)}
+          </div>
         </Card>
       );
     }

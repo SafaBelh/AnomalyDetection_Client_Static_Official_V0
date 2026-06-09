@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { C } from "@/constants/colors";
 import { useToast } from "@/contexts/ToastContext";
 import { markAlertRead, pipelinesForTenant, useAuth, useStore, visibleTenants } from "@/store/db";
+import { ALERT_TABS } from "@/store/staticData";
 import { downloadCSV } from "@/store/wsAPI";
 import { addAuditEntry } from "@/utils/audit";
 import { sevColor } from "@/utils/formatters";
@@ -64,13 +65,7 @@ export function AlertsView() {
     if (tab === "en_attente") return a.status === "en_attente";
     return a.type === tab;
   });
-  const TABS = [
-    { id: "toutes", label: "Toutes" },
-    { id: "en_attente", label: "En attente" },
-    { id: "anomaly", label: "Anomalies" },
-    { id: "pipeline", label: "Pipelines" },
-    { id: "system", label: "Système" },
-  ];
+  const TABS = ALERT_TABS;
   const sevLabel = (s) =>
     s === "critical" ? "Critique" : s === "warning" ? "Attention" : "Info";
   const updateLocalAlert = (id, patch) => {

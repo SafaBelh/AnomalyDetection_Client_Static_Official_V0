@@ -37,6 +37,14 @@ import {
   buildApiSchema,
   buildCsvSchema,
   CSV_SOURCE_PRESETS,
+  DEFAULT_API_RESOURCE,
+  DEMO_TENANT_IDS_PLACEHOLDER,
+  INTEGRATION_CATEGORIES,
+  INTEGRATION_CONNECTION_TYPES,
+  INTEGRATION_JOIN_TYPES,
+  INTEGRATION_REPORT_FALLBACK_TENANTS,
+  JSON_IMPORT_TEMPLATE,
+  VISUAL_JOIN_PALETTE,
   normalizeTableName,
 } from "@/store/staticData";
 import { useStore, visibleTenants, createPipelineStore } from "@/store/db";
@@ -471,7 +479,7 @@ function buildQAFlow() {
     { id: "q_pl_commande", type: "pipeline_commande", key: "commandeGroupBy", bot: () => "Pipeline Commandes : quelles colonnes pour le Group By ? (optionnel)", next: "q_budget_tables" },
     { id: "q_budget_tables", type: "choice_dynamic", key: "budgetSourceTables", bot: () => "Quelle table contient les données budgétaires ?", next: "q_budget_formula" },
     { id: "q_budget_formula", type: "choice", key: "budgetFormulaType", bot: () => "Formule budgétaire à utiliser ?", options: [{ label: "Standard (Alloué − Consommé)", value: "standard" }, { label: "Avec engagements (Alloué − Engagé − Consommé)", value: "engaged" }, { label: "Personnalisée", value: "custom" }], next: "q_tenants" },
-    { id: "q_tenants", type: "text", key: "_tenantsRaw", bot: () => "IDs tenants (clients) séparés par des virgules :", placeholder: "CLIENT_001, CLIENT_002", next: "q_done" },
+    { id: "q_tenants", type: "text", key: "_tenantsRaw", bot: () => "IDs tenants (clients) séparés par des virgules :", placeholder: DEMO_TENANT_IDS_PLACEHOLDER, next: "q_done" },
     { id: "q_done", type: "done", bot: (a) => `✅ Configuration complète pour «${a.name || "votre ERP"}» ! Cliquez pour voir le rapport JSON.` },
   ];
   return base;
@@ -527,13 +535,7 @@ function SectionAccordion({ icon, title, subtitle, children, defaultOpen = true 
 /* ─── VISUAL JOIN BUILDER ─────────────────────────────────────── */
 function VisualJoinBuilder({ tables, joins, onChange }) {
   if (tables.length < 2) return null;
-  const palette = [
-    { bg: "rgba(217,79,61,.1)", border: "rgba(217,79,61,.35)", text: C.red },
-    { bg: "rgba(59,130,246,.1)", border: "rgba(59,130,246,.35)", text: "#1d4ed8" },
-    { bg: "rgba(34,197,94,.1)", border: "rgba(34,197,94,.35)", text: "#15803d" },
-    { bg: "rgba(245,158,11,.1)", border: "rgba(245,158,11,.35)", text: "#92400e" },
-    { bg: "rgba(139,92,246,.1)", border: "rgba(139,92,246,.35)", text: "#6d28d9" },
-  ];
+  const palette = VISUAL_JOIN_PALETTE;
 
   const getJoin = idx => (joins || [])[idx] || { type: "INNER", table: tables[idx + 1], on: "" };
   const updateJoin = (idx, field, val) => {
@@ -542,7 +544,7 @@ function VisualJoinBuilder({ tables, joins, onChange }) {
     next[idx] = { ...next[idx], [field]: val };
     onChange(next);
   };
-  const JOIN_TYPES = ["INNER", "LEFT", "RIGHT", "FULL"];
+  const JOIN_TYPES = INTEGRATION_JOIN_TYPES;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -866,11 +868,7 @@ function StatusTagInput({ value = [], onChange, placeholder, color = C.info }) {
 /* ─── FULL ERP REPORT MODAL ───────────────────────────────────── */
 function ERPReportModal({ integration, onClose }) {
   const [copied, setCopied] = useState(false);
-  const tenants = integration.tenants || [
-    { id: "CLIENT_001", label: "Client Alpha", active: true, platformTenantName: "Alpha Corp", pipelines: ["Factures", "Commandes"] },
-    { id: "CLIENT_002", label: "Client Beta", active: true, platformTenantName: "Beta Industries", pipelines: ["Factures"] },
-    { id: "CLIENT_003", label: "Client Gamma", active: false, platformTenantName: null, pipelines: [] },
-  ];
+  const tenants = integration.tenants || INTEGRATION_REPORT_FALLBACK_TENANTS;
   const activeTenants = tenants.filter(t => t.active);
   const linkedTenants = tenants.filter(t => t.platformTenantName);
   const selectedTables = integration.selectedTables || ["FACTURES", "FOURNISSEURS", "COMMANDES", "BUDGETS"];
@@ -1131,7 +1129,7 @@ function JSONImportView({ onAutofill, onBack }) {
   const [parsed, setParsed] = useState(null);
   const [error, setError] = useState(null);
   const [score, setScore] = useState(null);
-  const TEMPLATE = { identity: { name: "Mon ERP", connectorType: "ERP", authType: "BASIC", logo: "ME", color: "#D94F3D", description: "" }, authentication: { username: "erp_user", password: "••••••" }, connection: { type: "jdbc", jdbcUrl: "jdbc:postgresql://host:5432/erp_db", jdbcUsername: "erp_user", jdbcPassword: "" }, tables: { selected: ["FACTURES", "FOURNISSEURS", "COMMANDES", "BUDGETS"], budgetSources: ["BUDGETS"] }, pipelines: { factures: { enabled: true, sourceTables: ["FACTURES", "FOURNISSEURS"], fieldMappings: {} }, commandes: { enabled: true, sourceTables: ["COMMANDES"], groupBy: [] } }, budget: {}, tenants: ["CLIENT_001", "CLIENT_002"] };
+  const TEMPLATE = JSON_IMPORT_TEMPLATE;
   const handleParse = () => { try { const p = JSON.parse(raw); setParsed(p); setError(null); setScore(computeScore(p)); } catch (e) { setError("JSON invalide : " + e.message); setParsed(null); setScore(null); } };
   const handleTemplate = () => { setRaw(JSON.stringify(TEMPLATE, null, 2)); setParsed(null); setError(null); setScore(null); };
   const handleConfirm = () => {
@@ -1206,7 +1204,7 @@ const SMART_FORM_SECTIONS = [
   { id: "auth_details", label: "Détails d'authentification", color: "#6366f1", Icon: Settings2, fields: [], dynamic: true },
   { id: "connection", label: "Connexion", color: "#3b82f6", Icon: Plug, fields: [{ key: "connectionType", label: "Type de connexion", type: "select", options: ["jdbc", "api", "csv"] }, { key: "jdbcUrl", label: "URL JDBC", type: "text", placeholder: "jdbc:postgresql://host:5432/erp_db", span: 2, mono: true }, { key: "jdbcUsername", label: "Utilisateur", type: "text", placeholder: "erp_user" }, { key: "jdbcPassword", label: "Mot de passe", type: "password", placeholder: "••••••••" }] },
   { id: "tables", label: "Tables", color: "#059669", Icon: Database, fields: [{ key: "selectedTables", label: "Tables à importer", type: "table_picker", span: 2 }, { key: "budgetSourceTables", label: "Tables sources budget", type: "table_subset", span: 2 }] },
-  { id: "alerts", label: "Tenants", color: "#f59e0b", Icon: Cpu, fields: [{ key: "_tenantsRaw", label: "IDs Tenants (virgule)", type: "text", placeholder: "CLIENT_001, CLIENT_002", span: 2 }] },
+  { id: "alerts", label: "Tenants", color: "#f59e0b", Icon: Cpu, fields: [{ key: "_tenantsRaw", label: "IDs Tenants (virgule)", type: "text", placeholder: DEMO_TENANT_IDS_PLACEHOLDER, span: 2 }] },
 ];
 
 function SmartFormPanel({ formData, setFormData, schema, onSubmit }) {
@@ -1551,7 +1549,8 @@ function IdentityStep({ data, setData }) {
 
 function ConnectionStep({ data, setData, schema }) {
   const [testState, setTestState] = useState(null);
-  const connTypes = [{ id: "jdbc", label: "JDBC", Icon: Database, desc: "Base SQL directe" }, { id: "api", label: "API REST", Icon: Network, desc: "Endpoint HTTP" }, { id: "csv", label: "Fichier CSV", Icon: Layers, desc: "Import fichier" }];
+  const iconByName = { Database, Network, Layers };
+  const connTypes = INTEGRATION_CONNECTION_TYPES.map(type => ({ ...type, Icon: iconByName[type.icon] }));
   const allTables = schema?.tables || [];
   const selectedTables = data.selectedTables || [];
   const toggleTable = name => setData({ ...data, selectedTables: selectedTables.includes(name) ? selectedTables.filter(t => t !== name) : [...selectedTables, name] });
@@ -1587,7 +1586,7 @@ function ConnectionStep({ data, setData, schema }) {
     setData({ ...data, apiResources: next, selectedTables: nextSchema.tables.map(t => t.name) });
   };
   const addApiResource = () => {
-    const next = [...apiResources, { name: `resource_${apiResources.length + 1}`, path: data.apiEndpoint || "/api/resource", cols: ["id", "date", "amount", "status"], rowCount: 100 }];
+    const next = [...apiResources, { ...DEFAULT_API_RESOURCE, name: `resource_${apiResources.length + 1}`, path: data.apiEndpoint || DEFAULT_API_RESOURCE.path }];
     const nextSchema = buildApiSchema(next);
     setData({ ...data, connectionType: "api", apiResources: next, selectedTables: nextSchema.tables.map(t => t.name) });
   };
@@ -1652,6 +1651,24 @@ function BudgetStep({ data, setData, schema, connId }) {
   );
 }
 
+function getPipelineGroupByErrors(data) {
+  const pipelines = data.pipelines || {};
+  const customPipelines = data.customPipelines || [];
+  const checks = [
+    { key: "commande", label: PIPELINE_DEFS.commande.label },
+    ...customPipelines.map(cp => ({ key: cp.id, label: cp.label })),
+  ];
+  return checks.filter(({ key }) => {
+    const pl = pipelines[key] || {};
+    if (pl.enabled === false) return false;
+    return !Array.isArray(pl.groupByCols) || pl.groupByCols.length === 0;
+  });
+}
+
+function hasValidPipelineGroupBy(data) {
+  return getPipelineGroupByErrors(data).length === 0;
+}
+
 /* ─── PIPELINES STEP (updated with visual join builder) ──────── */
 function PipelinesStep({ data, setData, schema }) {
   const selectedTables = data.selectedTables || [];
@@ -1688,6 +1705,26 @@ function PipelinesStep({ data, setData, schema }) {
   const updateUserField = (id, field, value) => { const nextFields = userFields.map(f => f.id === id ? { ...f, [field]: value } : f); setPl({ ...pl, userFields: nextFields }); };
   const removeUserField = (id) => { const field = userFields.find(f => f.id === id); const nextMappings = { ...(pl.fieldMappings || {}) }; if (field?.key) delete nextMappings[field.key]; setPl({ ...pl, userFields: userFields.filter(f => f.id !== id), fieldMappings: nextMappings }); };
   const setUserFieldMapping = (field, value) => { if (!field.key) return; setPl({ ...pl, fieldMappings: { ...(pl.fieldMappings || {}), [field.key]: value } }); };
+  const requiresGroupBy = activeTab !== "facture";
+  const groupByOptions = requiresGroupBy
+    ? activeTab === "commande"
+      ? [
+        ...fixedFields
+          .filter(f => f.key !== "budgetCode")
+          .map(f => ({ key: f.key, label: f.label, source: "Champ fixe" })),
+        ...userFields
+          .filter(f => f.key && f.key !== "budgetCode")
+          .map(f => ({ key: f.key, label: f.label || f.key, source: "Champ personnalisé" })),
+      ]
+      : userFields
+        .filter(f => f.key)
+        .map(f => ({ key: f.key, label: f.label || f.key, source: "Champ personnalisé" }))
+    : [];
+  const toggleGroupBy = key => {
+    const current = Array.isArray(pl.groupByCols) ? pl.groupByCols : [];
+    setPl({ ...pl, groupByCols: current.includes(key) ? current.filter(item => item !== key) : [...current, key] });
+  };
+  const showGroupByError = requiresGroupBy && pl.enabled !== false && (!Array.isArray(pl.groupByCols) || pl.groupByCols.length === 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1735,6 +1772,41 @@ function PipelinesStep({ data, setData, schema }) {
               </div>)}
             </div>
           </SectionAccordion>
+
+          {requiresGroupBy && (
+            <SectionAccordion icon={<Layers size={13} color={plColor} />} title="Regroupement des séries" subtitle="Obligatoire pour commandes et pipelines personnalisés">
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <InfoBox color={showGroupByError ? C.red : C.info}>
+                  Sélectionnez au moins un champ qui définit une série métier. Le moteur détectera les anomalies dans chaque groupe.
+                </InfoBox>
+                {groupByOptions.length === 0 ? (
+                  <div style={{ fontSize: 12, color: C.g500, padding: "12px 14px", background: C.g50, borderRadius: 10, border: `1px dashed ${C.g200}` }}>
+                    Aucun champ disponible pour le regroupement. Ajoutez des champs personnalisés pour ce pipeline.
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 8 }}>
+                    {groupByOptions.map(option => {
+                      const checked = (pl.groupByCols || []).includes(option.key);
+                      return (
+                        <label key={option.key} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", borderRadius: 10, border: `1.5px solid ${checked ? plColor + "66" : C.g200}`, background: checked ? `${plColor}0F` : "#fff", cursor: "pointer" }}>
+                          <input type="checkbox" checked={checked} onChange={() => toggleGroupBy(option.key)} />
+                          <span style={{ minWidth: 0 }}>
+                            <span style={{ display: "block", fontSize: 12, fontWeight: 700, color: C.g900 }}>{option.label}</span>
+                            <span className="mono" style={{ display: "block", fontSize: 10, color: C.g400, marginTop: 1 }}>{option.key} · {option.source}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {showGroupByError && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: C.red, fontWeight: 700 }}>
+                    <AlertCircle size={14} /> Le regroupement des séries est obligatoire pour ce pipeline.
+                  </div>
+                )}
+              </div>
+            </SectionAccordion>
+          )}
         </>
       )}
     </div>
@@ -2049,7 +2121,8 @@ function SummaryStep({ data, onSave, onDelete, initialData }) {
     ...["facture", "commande"].filter(k => (pipelines[k] || {}).enabled !== false).map(k => PIPELINE_DEFS[k].label),
     ...customPipelines.filter(cp => (pipelines[cp.id] || {}).enabled !== false).map(cp => cp.label),
   ];
-  const isValid = data.name && (data.selectedTables || []).length > 0;
+  const groupByErrors = getPipelineGroupByErrors(data);
+  const isValid = data.name && (data.selectedTables || []).length > 0 && groupByErrors.length === 0;
   const connectionDetail = data.connectionType === "csv"
     ? `${(data.csvFiles || []).length} fichier(s) CSV`
     : data.connectionType === "api"
@@ -2079,7 +2152,7 @@ function SummaryStep({ data, onSave, onDelete, initialData }) {
             {isValid ? "Connecteur prêt à créer" : "Configuration incomplète"}
           </div>
           <div style={{ fontSize: 11, color: isValid ? "#16a34a" : "#b45309", marginTop: 2 }}>
-            {isValid ? "Toutes les étapes critiques sont complètes." : "Vérifiez le nom et la sélection de tables."}
+            {isValid ? "Toutes les étapes critiques sont complètes." : groupByErrors.length > 0 ? `Regroupement requis: ${groupByErrors.map(e => e.label).join(", ")}.` : "Vérifiez le nom et la sélection de tables."}
           </div>
         </div>
       </div>
@@ -2144,6 +2217,30 @@ function ConnectorWizardModal({ open, initialData = {}, onClose, onSave, onDelet
     setShowReport(true);
   };
 
+  const ensurePipelineGroupBy = () => {
+    const errors = getPipelineGroupByErrors(data);
+    if (errors.length === 0) return true;
+    toast(`Sélectionnez au moins un champ de regroupement pour: ${errors.map(e => e.label).join(", ")}.`, "error");
+    setStep(4);
+    return false;
+  };
+
+  const goToStep = (nextStep) => {
+    if (step === 4 && nextStep > 4 && !ensurePipelineGroupBy()) return;
+    setStep(nextStep);
+  };
+
+  const saveConnector = () => {
+    if (!ensurePipelineGroupBy()) return;
+    onSave(data);
+  };
+
+  const syncTemplates = () => {
+    if (!ensurePipelineGroupBy()) return;
+    onSyncTemplates?.(data);
+    setSavedPipelineSnapshot(makePipelineSnap(data));
+  };
+
   const connId = data.jdbcUrl?.includes("sap") ? "c1"
     : (data.jdbcUrl?.includes("sage") || data.jdbcUrl?.includes("sqlserver") || initialData?.id === "c2") ? "c2"
       : initialData?.id === "c1" ? "c1" : null;
@@ -2185,7 +2282,7 @@ function ConnectorWizardModal({ open, initialData = {}, onClose, onSave, onDelet
       case 5: return <BudgetStep data={data} setData={setData} schema={schema} connId={connId || "generic"} />;
       case 6: return <TenantsStep data={data} setData={setData} />;
       case 7: return <DataPreviewStep data={data} setData={setData} schema={schema} />;
-      case 8: return <SummaryStep data={data} onSave={() => onSave(data)} onDelete={onDelete} initialData={initialData} />;
+      case 8: return <SummaryStep data={data} onSave={saveConnector} onDelete={onDelete} initialData={initialData} />;
       default: return null;
     }
   };
@@ -2208,7 +2305,7 @@ function ConnectorWizardModal({ open, initialData = {}, onClose, onSave, onDelet
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {hasUnsavedIdentity && (
             <button
-              onClick={() => { onSave(data); setSavedSnapshot(makeIdentitySnap(data)); }}
+              onClick={() => { if (!ensurePipelineGroupBy()) return; onSave(data); setSavedSnapshot(makeIdentitySnap(data)); }}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 9, background: "rgba(34,197,94,.1)", border: "1px solid rgba(34,197,94,.22)", color: "#15803d", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}
             >
               <Check size={13} /> Sauvegarder
@@ -2216,7 +2313,7 @@ function ConnectorWizardModal({ open, initialData = {}, onClose, onSave, onDelet
           )}
           {hasUnsavedPipeline && (
             <button
-              onClick={() => { onSyncTemplates?.(data); setSavedPipelineSnapshot(makePipelineSnap(data)); }}
+              onClick={syncTemplates}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 9, background: "rgba(59,130,246,.1)", border: "1px solid rgba(59,130,246,.22)", color: "#1d4ed8", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}
             >
               <RefreshCw size={13} /> Synchroniser
@@ -2257,7 +2354,7 @@ function ConnectorWizardModal({ open, initialData = {}, onClose, onSave, onDelet
               const n = i + 1, done = step > n, active = step === n;
               const { Icon: SIcon } = s;
               return (
-                <div key={n} onClick={() => setStep(n)}
+                <div key={n} onClick={() => goToStep(n)}
                   style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", borderRadius: 10, background: active ? "rgba(217,79,61,.09)" : "transparent", border: `1.5px solid ${active ? "rgba(217,79,61,.22)" : "transparent"}`, cursor: "pointer", position: "relative" }}>
                   {active && <div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", width: 3, height: 18, borderRadius: "0 3px 3px 0", background: "linear-gradient(180deg,#D94F3D,#e86b59)" }} />}
                   <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: done ? C.successLight : active ? "rgba(217,79,61,.1)" : "rgba(0,0,0,.04)", border: `1.5px solid ${done ? C.successBorder : active ? "rgba(217,79,61,.25)" : C.g200}` }}>
@@ -2301,15 +2398,15 @@ function ConnectorWizardModal({ open, initialData = {}, onClose, onSave, onDelet
             </button>
             <div style={{ display: "flex", gap: 4 }}>
               {WIZARD_STEPS.map((_, i) => (
-                <div key={i} onClick={() => setStep(i + 1)}
+                <div key={i} onClick={() => goToStep(i + 1)}
                   style={{ width: step === i + 1 ? 16 : 5, height: 5, borderRadius: 99, cursor: "pointer", background: step > i + 1 ? C.success : step === i + 1 ? C.red : C.g200, transition: "all .3s" }} />
               ))}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {step < WIZARD_STEPS.length ? (
-                <button onClick={() => setStep(s => s + 1)} className="btn btn-primary">Suivant <ArrowRight size={13} /></button>
+                <button onClick={() => goToStep(step + 1)} className="btn btn-primary">Suivant <ArrowRight size={13} /></button>
               ) : !isEditing ? (
-                <button onClick={() => onSave(data)} className="btn btn-primary"><Sparkles size={13} /> Créer</button>
+                <button onClick={saveConnector} className="btn btn-primary"><Sparkles size={13} /> Créer</button>
               ) : null}
             </div>
           </div>
@@ -2435,8 +2532,43 @@ function IntegrationCard({ integration, onEdit, onReport, onDisconnect, isAdmin 
 }
 
 /* ─── MAIN VIEW ─────────────────────────────────────────────── */
+const WIDGETS_ERP_STORAGE_KEY = "anomalyiq.erpConnectors";
+
+function publishErpConnectorsForWidgets(connectors) {
+  try {
+    const erps = connectors
+      .filter(c => (c.category === "erp" || c.connectorType === "ERP" || c.type === "ERP") && c.status !== "coming_soon")
+      .map(c => ({
+        id: c.id,
+        name: c.name,
+        logo: c.logo,
+        color: c.color,
+        category: c.category || "erp",
+        status: c.status,
+        connectorType: c.connectorType || c.type || "ERP",
+        type: c.type || "ERP",
+        authType: c.authType,
+        description: c.description,
+        selectedTables: c.selectedTables || [],
+        tenants: c.tenants || [],
+      }));
+    localStorage.setItem(WIDGETS_ERP_STORAGE_KEY, JSON.stringify(erps));
+  } catch {
+    // Widgets sync is best-effort and must not block the integrations page.
+  }
+}
+
+function readPublishedErpConnectors() {
+  try {
+    const raw = localStorage.getItem(WIDGETS_ERP_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch {}
+  return null;
+}
+
 export function IntegrationsView() {
-  const [connectors, setConnectors] = useState(DEMO_CONNECTORS);
+  const [connectors, setConnectors] = useState(() => readPublishedErpConnectors() || DEMO_CONNECTORS);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [modal, setModal] = useState(null);
@@ -2444,13 +2576,7 @@ export function IntegrationsView() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantHasData, setAssistantHasData] = useState(false);
 
-  const CATS = [
-    { id: "all", label: "Tout" },
-    { id: "erp", label: "ERP" },
-    { id: "accounting", label: "Comptabilité" },
-    { id: "crm", label: "CRM" },
-    { id: "storage", label: "Stockage" },
-  ];
+  const CATS = INTEGRATION_CATEGORIES;
 
   const filtered = connectors.filter(c => {
     if (category !== "all" && c.category !== category) return false;
@@ -2459,6 +2585,10 @@ export function IntegrationsView() {
   });
 
   const connected = connectors.filter(c => c.status === "connected");
+
+  useEffect(() => {
+    publishErpConnectorsForWidgets(connectors);
+  }, [connectors]);
 
   const handleSave = d => {
     const saved = { ...d, pipelineTemplatesJson: JSON.stringify(d.pipelines || CONNECTOR_CONFIG.step7_templates) };

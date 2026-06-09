@@ -29,6 +29,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { C } from "@/constants/colors";
 import { useToast } from "@/contexts/ToastContext";
 import { invoicesForTenant, partnersForTenant, pipelinesForTenant, useAuth, visibleTenants } from "@/store/db";
+import { CONNECTOR_LABELS, DERIVED_ANOMALY_DEFAULTS } from "@/store/staticData";
 import { downloadCSV } from "@/store/wsAPI";
 import { addAuditEntry } from "@/utils/audit";
 import { apiGet, apiPost } from "@/utils/api";
@@ -67,9 +68,7 @@ const friendlyType = (t) =>
 
 const connectorLabel = (connectorId) => {
   if (!connectorId) return "Sans ERP";
-  if (connectorId === "mock-conn-1") return "Ask&Go ERP";
-  if (connectorId === "mock-conn-liadev") return "LiaDev ERP";
-  return connectorId;
+  return CONNECTOR_LABELS[connectorId] || connectorId;
 };
 
 /* ─── styles ───────────────────────────────────────────────── */
@@ -649,12 +648,12 @@ export function AnomaliesView() {
         pipelineId: invoicePipeline?.id,
         pipelineName: invoicePipeline?.name,
         connectorId: invoicePipeline?.connectorId,
-        anomalyType: i.anomalyType || "AMOUNT_SPIKE",
-        score: i.score ?? i.anomalyScore ?? 0.96,
+        anomalyType: i.anomalyType || DERIVED_ANOMALY_DEFAULTS.type,
+        score: i.score ?? i.anomalyScore ?? DERIVED_ANOMALY_DEFAULTS.score,
         actualAmount: i.amount,
         detectedAt: i.date || i.invoiceDate,
-        expectedAmount: i.expectedAmount || i.referenceMu || Math.round((i.amount || 0) * 0.72),
-        maxAcceptable: i.maxAcceptable || Math.round((i.amount || 0) * 0.85),
+        expectedAmount: i.expectedAmount || i.referenceMu || Math.round((i.amount || 0) * DERIVED_ANOMALY_DEFAULTS.expectedAmountRatio),
+        maxAcceptable: i.maxAcceptable || Math.round((i.amount || 0) * DERIVED_ANOMALY_DEFAULTS.maxAcceptableRatio),
       }));
   });
 

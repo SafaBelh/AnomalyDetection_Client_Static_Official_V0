@@ -355,13 +355,14 @@ export const CONNECTOR_CONFIG = {
       tables: ["commandes"],
       joins: [],
       conditions: ["commandes.status != 'ANNULE'"],
-      groupByCols: ["commandes.ligne_budgetaire"],
+      groupByCols: ["supplierName"],
       fieldMappings: {
         commandeRef: "commandes.commande_id",
         commandeDate: "commandes.date_cmd",
         amount: "commandes.amount",
         supplierName: "commandes.supplier_code",
         budgetCode: "commandes.ligne_budgetaire",
+        category: "commandes.category",
         status: "commandes.status",
       },
       tolerancePct: 0.10,
@@ -466,9 +467,10 @@ export const PIPELINE_DEFS = {
       { key: "commandeRef", label: "Référence commande", required: true },
       { key: "commandeDate", label: "Date commande", required: true },
       { key: "amount", label: "Montant", required: true },
-      { key: "supplierName", label: "Fournisseur", required: false },
-      { key: "budgetCode", label: "Ligne budgétaire", required: true },
-      { key: "status", label: "Statut", required: false },
+      { key: "supplierName", label: "Fournisseur", required: true },
+      { key: "status", label: "Statut", required: true },
+      { key: "budgetCode", label: "Ligne budgétaire (optionnel)", required: false },
+      { key: "category", label: "Catégorie (optionnel)", required: false },
     ],
     allowExtraFields: true, hasGroupBy: true
   },
@@ -479,7 +481,7 @@ export const GENERIC_SCHEMA = {
     { name: "factures", cols: ["facture_id", "tenant_id", "date", "status", "amount", "supplier_code", "category_code"], rowCount: 50 },
     { name: "suppliers", cols: ["supplier_code", "supplier_name"], rowCount: 4 },
     { name: "categories", cols: ["category_code", "category_name"], rowCount: 5 },
-    { name: "commandes", cols: ["commande_id", "facture_id", "date_cmd", "amount", "supplier_code", "ligne_budgetaire", "status"], rowCount: 36 },
+    { name: "commandes", cols: ["commande_id", "facture_id", "date_cmd", "amount", "supplier_code", "ligne_budgetaire", "category", "status"], rowCount: 36 },
     { name: "budgets", cols: ["budget_id", "tenant_id", "year", "ligne_budgetaire", "libelle", "budget_alloue", "montant_engage", "montant_consomme", "status"], rowCount: 3 },
   ],
   rels: [
@@ -528,7 +530,7 @@ export const CSV_SOURCE_PRESETS = [
     label: "Commandes CSV",
     name: "demo_commandes_2026.csv",
     tableName: "commandes_csv",
-    cols: ["commande_id", "commande_date", "vendor_code", "vendor_name", "amount", "budget_code", "status", "tenant_id"],
+    cols: ["commande_id", "commande_date", "vendor_code", "vendor_name", "amount", "budget_code", "category", "status", "tenant_id"],
     rowCount: 136,
   },
   {
@@ -646,9 +648,10 @@ export const DEMO_CONNECTORS = [
           amount: "commandes.amount",
           supplierName: "commandes.supplier_code",
           budgetCode: "commandes.ligne_budgetaire",
+          category: "commandes.category",
           status: "commandes.status",
         },
-        groupByCols: ["commandes.ligne_budgetaire"],
+        groupByCols: ["supplierName"],
         tolerancePct: 0.10,
         toleranceDays: 30,
       },
@@ -770,6 +773,168 @@ export const WIZARD_STEPS = [
   { label: "Récapitulatif", desc: "Vérification finale", Icon: CheckCircle2 },
 ];
 
+export const WS_MAPPING_DEMO_COLUMNS = ["invoice_ref", "invoice_date", "amount", "supplier_code", "label", "entity", "status", "due_date"];
+
+export const WS_MAPPING_CORE_FIELDS = [
+  { k: "amount", lbl: "Montant", req: true, hint: "Valeur numérique de la facture" },
+  { k: "date", lbl: "Date facture", req: true, hint: "Date d'émission ou de comptabilisation" },
+  { k: "supplier", lbl: "Fournisseur", req: true, hint: "Code ou nom du tiers / fournisseur" },
+  { k: "label", lbl: "Libellé / Service", req: false, hint: "Sous-catégorie, service ou description" },
+  { k: "tenant", lbl: "Entité / Société", req: false, hint: "Code société ou entité juridique" },
+  { k: "status", lbl: "Statut", req: false, hint: "Statut de la pièce" },
+  { k: "docref", lbl: "Réf. document", req: false, hint: "Numéro ou référence de la pièce" },
+];
+
+export const CSV_IMPORT_SEQUENCE = [
+  { delay: 0, text: "$ anomalyiq import --source csv --validate", color: "#a8d8a8" },
+  { delay: 320, text: "  Lecture du fichier…", color: "#94a3b8" },
+  { delay: 700, text: "  Parsing en-têtes CSV…", color: "#94a3b8" },
+  { delay: 1100, text: "  ✔ En-têtes détectés :", color: "#4ade80" },
+  { delay: 1350, text: "__FIELDS__", color: "#60a5fa" },
+  { delay: 1700, text: "  Validation des types…", color: "#94a3b8" },
+  { delay: 2100, text: "  ✔ Colonnes montant   → numeric (float64)", color: "#4ade80" },
+  { delay: 2400, text: "  ✔ Colonnes date      → datetime", color: "#4ade80" },
+  { delay: 2700, text: "  ✔ Colonnes fournisseur → string", color: "#4ade80" },
+  { delay: 3000, text: "  Chargement dans la mémoire pipeline…", color: "#94a3b8" },
+  { delay: 3400, text: "__ROWS__", color: "#f9a8d4" },
+  { delay: 3800, text: "  ✔ Import terminé avec succès", color: "#4ade80" },
+  { delay: 4000, text: "  Pipeline prêt — passez à la connexion ↓", color: "#fbbf24" },
+];
+
+export const PIPELINE_CSV_FIXTURES = [
+  {
+    name: "Factures Ask&Go mixed quality",
+    file: "askgo_factures_mixed_quality.csv",
+    desc: "Factures avec doublons, valeurs manquantes, invalid dates, tenant_red.",
+    mapping: "invoice_ref -> ID, invoice_date -> date, supplier_name -> fournisseur, amount -> montant, category -> label, status -> statut",
+  },
+  {
+    name: "Commandes budget 2026",
+    file: "askgo_commandes_budget_2026.csv",
+    desc: "Commandes avec budget_code, projection BUDGET_FOURN, ligne invalide.",
+    mapping: "commande_id -> reference, commande_date -> date, vendor -> fournisseur, amount -> montant, budget_code -> budgetCode, status -> statut",
+  },
+  {
+    name: "Generic expenses quality cases",
+    file: "generic_expenses_quality_cases.csv",
+    desc: "Colonnes differentes pour tester mapping et nettoyage generique.",
+    mapping: "record_id -> ID, date_posted -> date, vendor_name -> fournisseur, gross_amount -> montant, expense_type -> label, approval_state -> statut",
+  },
+];
+
+export const ADMIN_TENANT_TYPE_DEFS = [
+  { type: "Enterprise", role: "ADMIN", colorKey: "red" },
+  { type: "Pro", role: "TENANT_ADMIN", colorKey: "info" },
+  { type: "Starter", role: "USER", fallback: true, colorKey: "success" },
+];
+
+export const ADMIN_PIPELINE_STATUS_DEFS = [
+  { status: "Actif", matches: ["actif"], colorKey: "success" },
+  { status: "Warning", matches: ["warning"], colorKey: "warning" },
+  { status: "Paused", matches: ["draft", "paused"], colorKey: "grey400" },
+];
+
+export const ADMIN_RADAR_METRICS = ["Factures", "Anomalies", "Pipelines", "Alertes", "Taux"];
+
+export const PIPELINE_DASHBOARD_RADAR_METRICS = [
+  { metric: "Volume (factures)", fullMark: 100 },
+  { metric: "Stabilité (CV)", fullMark: 100 },
+  { metric: "Alertes actives", fullMark: 100 },
+  { metric: "Taille série", fullMark: 100 },
+  { metric: "Tolérance", fullMark: 100 },
+];
+
+export const ML_RADAR_METRICS = [
+  { metric: "Volume", fullMark: 100 },
+  { metric: "Stabilité CV", fullMark: 100 },
+  { metric: "Taille série", fullMark: 100 },
+  { metric: "Tolérance", fullMark: 100 },
+  { metric: "Score anomalie", fullMark: 100 },
+];
+
+export const CONNECTOR_LABELS = {
+  "mock-conn-1": "Ask&Go ERP",
+  "mock-conn-liadev": "LiaDev ERP",
+};
+
+export const INTEGRATION_CATEGORIES = [
+  { id: "all", label: "Tout" },
+  { id: "erp", label: "ERP" },
+  { id: "accounting", label: "Comptabilité" },
+  { id: "crm", label: "CRM" },
+  { id: "storage", label: "Stockage" },
+];
+
+export const INTEGRATION_CONNECTION_TYPES = [
+  { id: "jdbc", label: "JDBC", icon: "Database", desc: "Base SQL directe" },
+  { id: "api", label: "API REST", icon: "Network", desc: "Endpoint HTTP" },
+  { id: "csv", label: "Fichier CSV", icon: "Layers", desc: "Import fichier" },
+];
+
+export const INTEGRATION_JOIN_TYPES = ["INNER", "LEFT", "RIGHT", "FULL"];
+
+export const VISUAL_JOIN_PALETTE = [
+  { bg: "rgba(217,79,61,.1)", border: "rgba(217,79,61,.35)", text: "#D94F3D" },
+  { bg: "rgba(59,130,246,.1)", border: "rgba(59,130,246,.35)", text: "#1d4ed8" },
+  { bg: "rgba(34,197,94,.1)", border: "rgba(34,197,94,.35)", text: "#15803d" },
+  { bg: "rgba(245,158,11,.1)", border: "rgba(245,158,11,.35)", text: "#92400e" },
+  { bg: "rgba(139,92,246,.1)", border: "rgba(139,92,246,.35)", text: "#6d28d9" },
+];
+
+export const INTEGRATION_REPORT_FALLBACK_TENANTS = [
+  { id: "CLIENT_001", label: "Client Alpha", active: true, platformTenantName: "Alpha Corp", pipelines: ["Factures", "Commandes"] },
+  { id: "CLIENT_002", label: "Client Beta", active: true, platformTenantName: "Beta Industries", pipelines: ["Factures"] },
+  { id: "CLIENT_003", label: "Client Gamma", active: false, platformTenantName: null, pipelines: [] },
+];
+
+export const DEFAULT_API_RESOURCE = {
+  path: "/api/resource",
+  cols: ["id", "date", "amount", "status"],
+  rowCount: 100,
+};
+
+export const ALERT_TABS = [
+  { id: "toutes", label: "Toutes" },
+  { id: "en_attente", label: "En attente" },
+  { id: "anomaly", label: "Anomalies" },
+  { id: "pipeline", label: "Pipelines" },
+  { id: "system", label: "Système" },
+];
+
+export const MONTH_NAMES_FR = [
+  "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+];
+
+export const BUDGET_TABS = [
+  { id: "suivi", label: "Suivi budgétaire" },
+  { id: "serie", label: "Analyse par série" },
+  { id: "simulation", label: "Simulation budget" },
+  { id: "commandes", label: "Budget Commandes" },
+];
+
+export const DEMO_TENANT_IDS_PLACEHOLDER = "CLIENT_001, CLIENT_002";
+
+export const JSON_IMPORT_TEMPLATE = {
+  identity: { name: "Mon ERP", connectorType: "ERP", authType: "BASIC", logo: "ME", color: "#D94F3D", description: "" },
+  authentication: { username: "erp_user", password: "••••••" },
+  connection: { type: "jdbc", jdbcUrl: "jdbc:postgresql://host:5432/erp_db", jdbcUsername: "erp_user", jdbcPassword: "" },
+  tables: { selected: ["FACTURES", "FOURNISSEURS", "COMMANDES", "BUDGETS"], budgetSources: ["BUDGETS"] },
+  pipelines: {
+    factures: { enabled: true, sourceTables: ["FACTURES", "FOURNISSEURS"], fieldMappings: {} },
+    commandes: { enabled: true, sourceTables: ["COMMANDES"], groupBy: [] },
+  },
+  budget: {},
+  tenants: ["CLIENT_001", "CLIENT_002"],
+};
+
+export const DERIVED_ANOMALY_DEFAULTS = {
+  type: "AMOUNT_SPIKE",
+  score: 0.96,
+  expectedAmountRatio: 0.72,
+  maxAcceptableRatio: 0.85,
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 5 — MOCK API RESPONSE SHAPES (exactly as backend controllers return)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -832,7 +997,7 @@ export const TENANT_CONNECTIONS_TABLE = [{
 
 export const PIPELINES_TABLE = [
   { id: "mock-pipe-1", tenantId: _whitecapeUser.id, name: "whitecape_ask - facture", sourceType: "JDBC", status: "ACTIVE", active: true, templateKey: "facture", isCustom: false, connectorId: "mock-conn-1", externalId: "whitecape_ask", lastRunAt: "2026-05-31T11:00:00Z", lastRunStats: { processedCount: 20, importedCount: 20, anomalyCount: 3 }, configJson: JSON.stringify({ query: "SELECT ..." }) },
-  { id: "mock-pipe-2", tenantId: _whitecapeUser.id, name: "whitecape_ask - commande", sourceType: "JDBC", status: "ACTIVE", active: true, templateKey: "commande", isCustom: false, connectorId: "mock-conn-1", externalId: "whitecape_ask", lastRunAt: "2026-05-31T11:05:00Z", lastRunStats: { processedCount: 20, importedCount: 20, anomalyCount: 0 }, configJson: JSON.stringify({ query: "SELECT ..." }) },
+  { id: "mock-pipe-2", tenantId: _whitecapeUser.id, name: "whitecape_ask - commande", sourceType: "JDBC", status: "ACTIVE", active: true, templateKey: "commande", isCustom: false, connectorId: "mock-conn-1", externalId: "whitecape_ask", lastRunAt: "2026-05-31T11:05:00Z", lastRunStats: { processedCount: 20, importedCount: 20, anomalyCount: 0 }, configJson: JSON.stringify({ query: "SELECT ...", groupByCols: ["supplierName"], fieldMappings: CONNECTOR_CONFIG.step7_templates.commande.fieldMappings }) },
 ];
 
 export const ALERTS_TABLE = [
@@ -1047,6 +1212,97 @@ export function getSchemaForUrl(jdbcUrl, connId) {
 // SECTION 7 — CONVENIENCE EXPORT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+function _columnsForRows(rows) {
+  return Array.from(rows.reduce((cols, row) => {
+    if (row && typeof row === "object" && !Array.isArray(row)) {
+      Object.keys(row).forEach((key) => cols.add(key));
+    } else {
+      cols.add("value");
+    }
+    return cols;
+  }, new Set()));
+}
+
+function _normalizeReportRows(value) {
+  if (Array.isArray(value)) {
+    return value.map((row) => (row && typeof row === "object" && !Array.isArray(row) ? row : { value: row }));
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).map(([key, detail]) => ({ key, detail }));
+  }
+  return [{ value }];
+}
+
+function _makeStaticDataTable(id, label, description, value, section = "Demo") {
+  const rows = _normalizeReportRows(value);
+  return {
+    id,
+    label,
+    description,
+    section,
+    rowCount: rows.length,
+    columns: _columnsForRows(rows),
+    rows,
+  };
+}
+
+export const STATIC_DATA_REPORT = [
+  _makeStaticDataTable("suppliers", "SUPPLIERS_TABLE", "Raw fournisseurs ERP.", SUPPLIERS_TABLE, "Raw database"),
+  _makeStaticDataTable("categories", "CATEGORIES_TABLE", "Raw categories ERP.", CATEGORIES_TABLE, "Raw database"),
+  _makeStaticDataTable("factures", "FACTURES_TABLE", "Raw factures ERP, incluant historiques et tenants demo.", FACTURES_TABLE, "Raw database"),
+  _makeStaticDataTable("commandes", "COMMANDES_TABLE", "Raw commandes ERP utilisees par le pipeline budget.", COMMANDES_TABLE, "Raw database"),
+  _makeStaticDataTable("budgets", "BUDGETS_TABLE", "Raw lignes budgetaires.", BUDGETS_TABLE, "Raw database"),
+  _makeStaticDataTable("users", "USERS_TABLE", "Comptes demo plateforme et tenant.", USERS_TABLE, "Raw database"),
+  _makeStaticDataTable("invoices", "INVOICES_TABLE", "Factures mappees pour les vues frontend.", INVOICES_TABLE, "Derived frontend"),
+  _makeStaticDataTable("historicalInvoices", "HISTORICAL_INVOICES_TABLE", "Factures historiques 2024-2025 pour baseline moteur.", HISTORICAL_INVOICES_TABLE, "Derived frontend"),
+  _makeStaticDataTable("commandesFrontend", "COMMANDES_FRONTEND_TABLE", "Commandes mappees pour les vues frontend.", COMMANDES_FRONTEND_TABLE, "Derived frontend"),
+  _makeStaticDataTable("commandBudgetSeries", "COMMAND_BUDGET_SERIES_TABLE", "Series budgetaires derivees des commandes.", COMMAND_BUDGET_SERIES_TABLE, "Derived frontend"),
+  _makeStaticDataTable("connectors", "CONNECTORS_TABLE", "DTO mock des connecteurs backend.", CONNECTORS_TABLE, "Mock API"),
+  _makeStaticDataTable("tenantConnections", "TENANT_CONNECTIONS_TABLE", "DTO mock des liens ERP par tenant.", TENANT_CONNECTIONS_TABLE, "Mock API"),
+  _makeStaticDataTable("pipelines", "PIPELINES_TABLE", "DTO mock des pipelines actifs.", PIPELINES_TABLE, "Mock API"),
+  _makeStaticDataTable("alerts", "ALERTS_TABLE", "DTO mock des alertes moteur.", ALERTS_TABLE, "Mock API"),
+  _makeStaticDataTable("budgetAnalysis", "BUDGET_ANALYSIS_TABLE", "DTO mock d'analyse budget.", BUDGET_ANALYSIS_TABLE, "Mock API"),
+  _makeStaticDataTable("csvDemoRows", "CSV_DEMO_ROWS", "Lignes CSV demo derivees des factures.", CSV_DEMO_ROWS, "Mock API"),
+  _makeStaticDataTable("pipelineLogs", "PIPELINE_LOGS_TABLE", "Logs mock de decisions pipeline.", PIPELINE_LOGS_TABLE, "Mock API"),
+  _makeStaticDataTable("anomalies", "ANOMALIES_TABLE", "Anomalies mock explicites.", ANOMALIES_TABLE, "Mock API"),
+  _makeStaticDataTable("series", "SERIES_TABLE", "Series statistiques mock.", SERIES_TABLE, "Mock API"),
+  _makeStaticDataTable("demoConnectors", "DEMO_CONNECTORS", "Connecteurs complets utilises par l'UI integrations.", DEMO_CONNECTORS, "Configuration"),
+  _makeStaticDataTable("connectorConfig", "CONNECTOR_CONFIG", "Configuration source du connecteur Ask&Go ERP.", CONNECTOR_CONFIG, "Configuration"),
+  _makeStaticDataTable("authFields", "AUTH_FIELDS", "Champs d'authentification par type.", AUTH_FIELDS, "Configuration"),
+  _makeStaticDataTable("pipelineDefs", "PIPELINE_DEFS", "Definitions UI et mapping des pipelines.", PIPELINE_DEFS, "Configuration"),
+  _makeStaticDataTable("genericSchema", "GENERIC_SCHEMA", "Schema ERP generique.", GENERIC_SCHEMA, "Configuration"),
+  _makeStaticDataTable("csvSourcePresets", "CSV_SOURCE_PRESETS", "Presets de sources CSV.", CSV_SOURCE_PRESETS, "Configuration"),
+  _makeStaticDataTable("mockSchemas", "MOCK_SCHEMAS", "Schemas ERP mock SAP/Sage.", MOCK_SCHEMAS, "Configuration"),
+  _makeStaticDataTable("budgetPresets", "BUDGET_PRESETS", "Presets de formules budget.", BUDGET_PRESETS, "Configuration"),
+  _makeStaticDataTable("settingsDefaults", "SETTINGS_DEFAULTS", "Valeurs par defaut des parametres.", SETTINGS_DEFAULTS, "UI constants"),
+  _makeStaticDataTable("settingsOptions", "SETTINGS_OPTIONS", "Options selectionnables des parametres.", SETTINGS_OPTIONS, "UI constants"),
+  _makeStaticDataTable("tablePalette", "TABLE_PALETTE", "Palette ERD/table.", TABLE_PALETTE, "UI constants"),
+  _makeStaticDataTable("erdOffsets", "ERD_OFFSETS", "Offsets de layout ERD.", ERD_OFFSETS, "UI constants"),
+  _makeStaticDataTable("customPipelineColors", "CUSTOM_PIPELINE_COLORS", "Couleurs pipelines custom.", CUSTOM_PIPELINE_COLORS, "UI constants"),
+  _makeStaticDataTable("wizardSteps", "WIZARD_STEPS", "Etapes du wizard connecteur.", WIZARD_STEPS, "UI constants"),
+  _makeStaticDataTable("wsMappingDemoColumns", "WS_MAPPING_DEMO_COLUMNS", "Colonnes demo de mapping workspace.", WS_MAPPING_DEMO_COLUMNS, "UI constants"),
+  _makeStaticDataTable("wsMappingCoreFields", "WS_MAPPING_CORE_FIELDS", "Champs coeur de mapping workspace.", WS_MAPPING_CORE_FIELDS, "UI constants"),
+  _makeStaticDataTable("csvImportSequence", "CSV_IMPORT_SEQUENCE", "Sequence terminale d'import CSV.", CSV_IMPORT_SEQUENCE, "UI constants"),
+  _makeStaticDataTable("pipelineCsvFixtures", "PIPELINE_CSV_FIXTURES", "Fixtures CSV pipeline.", PIPELINE_CSV_FIXTURES, "UI constants"),
+  _makeStaticDataTable("adminTenantTypeDefs", "ADMIN_TENANT_TYPE_DEFS", "Definitions de typologie tenant admin.", ADMIN_TENANT_TYPE_DEFS, "UI constants"),
+  _makeStaticDataTable("adminPipelineStatusDefs", "ADMIN_PIPELINE_STATUS_DEFS", "Definitions statut pipeline admin.", ADMIN_PIPELINE_STATUS_DEFS, "UI constants"),
+  _makeStaticDataTable("adminRadarMetrics", "ADMIN_RADAR_METRICS", "Metriques radar admin.", ADMIN_RADAR_METRICS, "UI constants"),
+  _makeStaticDataTable("pipelineDashboardRadarMetrics", "PIPELINE_DASHBOARD_RADAR_METRICS", "Metriques radar dashboard pipeline.", PIPELINE_DASHBOARD_RADAR_METRICS, "UI constants"),
+  _makeStaticDataTable("mlRadarMetrics", "ML_RADAR_METRICS", "Metriques radar ML.", ML_RADAR_METRICS, "UI constants"),
+  _makeStaticDataTable("connectorLabels", "CONNECTOR_LABELS", "Libelles connecteurs par id.", CONNECTOR_LABELS, "UI constants"),
+  _makeStaticDataTable("integrationCategories", "INTEGRATION_CATEGORIES", "Categories integrations.", INTEGRATION_CATEGORIES, "UI constants"),
+  _makeStaticDataTable("integrationConnectionTypes", "INTEGRATION_CONNECTION_TYPES", "Types de connexion integration.", INTEGRATION_CONNECTION_TYPES, "UI constants"),
+  _makeStaticDataTable("integrationJoinTypes", "INTEGRATION_JOIN_TYPES", "Types de jointures integration.", INTEGRATION_JOIN_TYPES, "UI constants"),
+  _makeStaticDataTable("visualJoinPalette", "VISUAL_JOIN_PALETTE", "Palette visuelle des jointures.", VISUAL_JOIN_PALETTE, "UI constants"),
+  _makeStaticDataTable("integrationReportFallbackTenants", "INTEGRATION_REPORT_FALLBACK_TENANTS", "Tenants fallback pour rapport integration.", INTEGRATION_REPORT_FALLBACK_TENANTS, "UI constants"),
+  _makeStaticDataTable("defaultApiResource", "DEFAULT_API_RESOURCE", "Ressource API par defaut.", DEFAULT_API_RESOURCE, "UI constants"),
+  _makeStaticDataTable("alertTabs", "ALERT_TABS", "Onglets alertes.", ALERT_TABS, "UI constants"),
+  _makeStaticDataTable("monthNamesFr", "MONTH_NAMES_FR", "Noms des mois FR.", MONTH_NAMES_FR, "UI constants"),
+  _makeStaticDataTable("budgetTabs", "BUDGET_TABS", "Onglets budget.", BUDGET_TABS, "UI constants"),
+  _makeStaticDataTable("jsonImportTemplate", "JSON_IMPORT_TEMPLATE", "Template import JSON connecteur.", JSON_IMPORT_TEMPLATE, "UI constants"),
+  _makeStaticDataTable("derivedAnomalyDefaults", "DERIVED_ANOMALY_DEFAULTS", "Defaults d'anomalie derivee.", DERIVED_ANOMALY_DEFAULTS, "UI constants"),
+];
+
 export const ALL_FAKE_DATA = {
   suppliers: SUPPLIERS_TABLE,
   categories: CATEGORIES_TABLE,
@@ -1056,6 +1312,7 @@ export const ALL_FAKE_DATA = {
   users: USERS_TABLE,
   invoices: INVOICES_TABLE,
   connectorConfig: CONNECTOR_CONFIG,
+  staticDataReport: STATIC_DATA_REPORT,
 };
 
 export default ALL_FAKE_DATA;

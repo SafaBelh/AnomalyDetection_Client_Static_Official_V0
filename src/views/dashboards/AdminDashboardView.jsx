@@ -9,6 +9,7 @@ import { C, CC } from "@/constants/colors";
 import { fmtE, fmtK } from "@/utils/formatters";
 import { apiGet } from "@/utils/api";
 import { db, useStore, visibleTenants } from "@/store/db";
+import { ADMIN_PIPELINE_STATUS_DEFS, ADMIN_RADAR_METRICS, ADMIN_TENANT_TYPE_DEFS } from "@/store/staticData";
 
 const normalizeAnomalyType = (value) => {
   const raw = String(value || "autre").toLowerCase();
@@ -98,23 +99,11 @@ export function AdminDashboardView({ onNavigate }) {
   }, [tenants]);
 
   // ── Tenant type breakdown ─────────────────────────────────────────────
-  const tenantTypeData = [
-    {
-      type: "Enterprise",
-      count: tenants.filter((t) => t.role === "ADMIN").length,
-      color: C.red,
-    },
-    {
-      type: "Pro",
-      count: tenants.filter((t) => t.role === "TENANT_ADMIN").length,
-      color: C.info,
-    },
-    {
-      type: "Starter",
-      count: tenants.filter((t) => t.role === "USER" || (!t.role)).length,
-      color: C.success,
-    },
-  ];
+  const tenantTypeData = ADMIN_TENANT_TYPE_DEFS.map((def) => ({
+    type: def.type,
+    count: tenants.filter((t) => def.fallback ? t.role === def.role || !t.role : t.role === def.role).length,
+    color: C[def.colorKey],
+  }));
 
   // ── Invoice amount per tenant (bar) ───────────────────────────────────
   const invoiceVolumeData = enrichedTenants
@@ -175,23 +164,11 @@ export function AdminDashboardView({ onNavigate }) {
   }), [allAnomalies, allInvoices, enrichedTenants]);
 
   // ── Pipeline status breakdown ──────────────────────────────────────────
-  const pipelineStatusData = [
-    {
-      status: "Actif",
-      count: allPipelines.filter((p) => p.status === "actif").length,
-      color: C.success,
-    },
-    {
-      status: "Warning",
-      count: allPipelines.filter((p) => p.status === "warning").length,
-      color: C.warning,
-    },
-    {
-      status: "Paused",
-      count: allPipelines.filter((p) => p.status === "draft" || p.status === "paused").length,
-      color: C.grey400,
-    },
-  ];
+  const pipelineStatusData = ADMIN_PIPELINE_STATUS_DEFS.map((def) => ({
+    status: def.status,
+    count: allPipelines.filter((p) => def.matches.includes(p.status)).length,
+    color: C[def.colorKey],
+  }));
 
   // ── Connector usage ────────────────────────────────────────────────────
   const connData = useMemo(() => {
@@ -212,7 +189,7 @@ export function AdminDashboardView({ onNavigate }) {
     .slice(0, 8);
 
   // ── Radar — client health metrics ─────────────────────────────────────
-  const RADAR_METRICS = ["Factures", "Anomalies", "Pipelines", "Alertes", "Taux"];
+  const RADAR_METRICS = ADMIN_RADAR_METRICS;
   const tInvoiceCounts = useMemo(() => enrichedTenants.map(t => t.invoiceCount || 0), [enrichedTenants]);
   const tAnomalyCounts = useMemo(() => enrichedTenants.map(t => t.anomalyCount || 0), [enrichedTenants]);
   const maxInv = Math.max(...tInvoiceCounts, 1);
