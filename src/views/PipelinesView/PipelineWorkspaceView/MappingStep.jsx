@@ -7,7 +7,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { parseCSV, wsAPI, wsStore } from "@/store/wsAPI";
 import { autoDetect } from "@/views/PipelinesView/PipelineWorkspaceView/utils";
 
-export function WSMappingStep({ uploadData, onConfirm, onNavigate }) {
+export function WSMappingStep({ uploadData, onConfirm, onNavigate, manageMode = false }) {
   // Prefer uploadData from previous upload step; fall back to headers stored in
   // wsStore by the pipeline-creation modal CSV import (new flow, no upload step).
   const DEMO_COLUMNS = ["invoice_ref", "invoice_date", "amount", "supplier_code", "label", "entity", "status", "due_date"];
@@ -486,7 +486,7 @@ export function WSMappingStep({ uploadData, onConfirm, onNavigate }) {
             Importation…
           </>
         ) : can ? (
-          `Importer & continuer →`
+          manageMode ? "Enregistrer le mapping" : `Importer & continuer →`
         ) : (
           "Sélectionner les 3 champs obligatoires (*)"
         )}

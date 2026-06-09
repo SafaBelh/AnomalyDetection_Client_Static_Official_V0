@@ -809,10 +809,10 @@ export function WSClusterEDAStep({ pipeline, onConfirm, onBack, onNavigate }) {
               Ignoring…
             </>
           ) : (
-            `Confirmer & construire les séries (${
+            `Confirmer & construire les séries · ${
               df.length - removedRows.size
             } lignes${
-              removedRows.size > 0 ? ` (${removedRows.size} retirées)` : ""
+              removedRows.size > 0 ? ` · ${removedRows.size} retirées` : ""
             }`
           )}
         </button>

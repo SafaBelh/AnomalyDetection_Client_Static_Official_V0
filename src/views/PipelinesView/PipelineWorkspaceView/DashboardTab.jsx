@@ -19,6 +19,7 @@ export function WSFullDashboard({
   distribution: distributionProp,
   groupFields: groupFieldsProp,
   onReset,
+  manageMode = false,
 }) {
   const series = Array.isArray(seriesProp) ? seriesProp : [];
   const groupFields = Array.isArray(groupFieldsProp) ? groupFieldsProp : [];
@@ -334,23 +335,29 @@ export function WSFullDashboard({
         <div style={{ display: "flex", gap: 8 }}>
           <button
             onClick={async () => {
+              if (manageMode) return;
               await wsAPI.runDetection();
               const a = await wsAPI.getAlerts("pending");
               setAllAlerts(Array.isArray(a) ? a : []);
               setAlertFilter("pending");
             }}
+            disabled={manageMode}
             className="btn-ghost"
-            style={{ fontSize: 12, padding: "6px 14px" }}
+            style={{ fontSize: 12, padding: "6px 14px", opacity: manageMode ? .45 : 1, cursor: manageMode ? "not-allowed" : "pointer" }}
+            title={manageMode ? "Action bloquée en mode gestion pour éviter une ré-importation." : undefined}
           >
             Re-détecter
           </button>
           <button
             onClick={() => {
+              if (manageMode) return;
               wsAPI.resetDatabase();
               onReset();
             }}
+            disabled={manageMode}
             className="btn-ghost"
-            style={{ fontSize: 12, padding: "6px 14px" }}
+            style={{ fontSize: 12, padding: "6px 14px", opacity: manageMode ? .45 : 1, cursor: manageMode ? "not-allowed" : "pointer" }}
+            title={manageMode ? "Action bloquée en mode gestion pour éviter une ré-importation." : undefined}
           >
             Nouveau CSV
           </button>
@@ -415,14 +422,17 @@ export function WSFullDashboard({
                 className={`kpi-card fade-up-${i + 1}`}
                 style={{ padding: "16px 18px" }}
               >
-                <div style={{ marginBottom: 8 }}>{renderIcon(k.icon, k.color)}</div>
                 <div
                   style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
                     fontFamily: "'Instrument Serif',serif",
                     fontSize: 28,
                     color: k.color,
                   }}
                 >
+                  {renderIcon(k.icon, k.color)}
                   {k.val}
                 </div>
                 <div style={{ fontSize: 11, color: C.grey500, marginTop: 4 }}>
@@ -463,9 +473,12 @@ export function WSFullDashboard({
                 fontWeight: 700,
                 color: C.grey500,
                 marginBottom: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
               }}
             >
-              <LineChartIcon size={13} color={C.grey500} style={{ marginRight: 5, verticalAlign: -2 }} /> Dépenses mensuelles
+              <LineChartIcon size={13} color={C.grey500} /> Dépenses mensuelles
             </div>
             <ResponsiveContainer width="100%" height={240}>
               <ComposedChart

@@ -311,8 +311,11 @@ export function WSSeriesBuilder({
                         borderRadius: 99,
                         background: "rgba(34,197,94,.1)",
                         color: C.success,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
                       }}
-                    ><Check size={9} strokeWidth={3} style={{marginRight:3}}/>{ok} prête{ok > 1 ? "s" : ""}</span>
+                    ><Check size={9} strokeWidth={3} />{ok} prête{ok > 1 ? "s" : ""}</span>
                     {flagged > 0 && (
                       <span
                         style={{
@@ -322,8 +325,11 @@ export function WSSeriesBuilder({
                           borderRadius: 99,
                           background: "rgba(245,158,11,.1)",
                           color: C.warning,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
                         }}
-                      ><TriangleAlert size={9} strokeWidth={2.5} style={{marginRight:3}}/>{flagged} à surveiller</span>
+                      ><TriangleAlert size={9} strokeWidth={2.5} />{flagged} à surveiller</span>
                     )}
                   </>
                 );
@@ -427,19 +433,24 @@ export function WSSeriesBuilder({
                               color: C.grey500,
                               marginTop: 2,
                               display: "flex",
+                              alignItems: "center",
+                              flexWrap: "wrap",
                               gap: 12,
                             }}
                           >
-                            <span>
-                              <FileText size={11} color={C.grey500} style={{ marginRight: 3, verticalAlign: -2 }} /> {s.n} facture{s.n > 1 ? "s" : ""}
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <FileText size={11} color={C.grey500} /> {s.n} facture{s.n > 1 ? "s" : ""}
                             </span>
-                            <span>Moy. {fmtE(Math.round(s.mu))}</span>
+                            <span style={{ display: "inline-flex", alignItems: "center" }}>Moy. {fmtE(Math.round(s.mu))}</span>
                             <span
                               style={{
                                 color: s.cv > 0.4 ? C.warning : C.grey500,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
                               }}
                             >
-                              <LineChart size={11} color={s.cv > 0.4 ? C.warning : C.grey500} style={{ marginRight: 3, verticalAlign: -2 }} /> Variabilité {cvPct}%
+                              <LineChart size={11} color={s.cv > 0.4 ? C.warning : C.grey500} /> Variabilité {cvPct}%
                             </span>
                           </div>
                         </div>
@@ -454,8 +465,11 @@ export function WSSeriesBuilder({
                             background: "rgba(245,158,11,.12)",
                             color: C.warning,
                             border: "1px solid rgba(245,158,11,.25)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
                           }}
-                        ><TriangleAlert size={10} strokeWidth={2.5} style={{marginRight:3}}/>À surveiller</span>
+                        ><TriangleAlert size={10} strokeWidth={2.5} />À surveiller</span>
                       ) : (
                         <span
                           style={{
@@ -466,8 +480,11 @@ export function WSSeriesBuilder({
                             background: "rgba(34,197,94,.12)",
                             color: C.success,
                             border: "1px solid rgba(34,197,94,.25)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
                           }}
-                        ><Check size={10} strokeWidth={3} style={{marginRight:3}}/>Prête</span>
+                        ><Check size={10} strokeWidth={3} />Prête</span>
                       )}
                     </div>
                     {issues.length > 0 && (

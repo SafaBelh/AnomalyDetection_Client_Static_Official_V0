@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from "react";
 import { ArrowRight, Check, CheckCircle, CheckCircle2, ChevronLeft, Clock, Database, FileText, FolderOpen, Globe, Play, Sparkles, Upload, X } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner";
 import { C } from "@/constants/colors";
-import { createPipelineStore, updatePipelineStore, useAuth, partnersForTenant } from "@/store/db";
+import { createPipelineStore, updatePipelineStore, useAuth, partnersForTenant, visibleTenants } from "@/store/db";
 import { parseCSV, wsAPI, wsStore } from "@/store/wsAPI";
 
 /* ─────────────────────────────────────────────────────────
@@ -136,12 +136,14 @@ const S = {
 
 export function PipelineConfigForm({
   pipeline,
+  tenantId,
   mode = "wizard",
   onCancel,
   onSubmitted,
   onOpenSeries,
 }) {
   const { tenant, partner, isSSO, isAdmin } = useAuth();
+  const creationTenantId = pipeline?.tenantId || tenantId || tenant?.id || visibleTenants()[0]?.id || null;
   const savedConfig = (() => {
     const raw = pipeline?.configJson ?? pipeline?.config ?? {};
     if (typeof raw === "string") {
@@ -151,7 +153,7 @@ export function PipelineConfigForm({
   })();
   const [wizardStep, setWizardStep] = useState(pipeline ? 3 : 1);
   const [name, setName] = useState(pipeline?.name ?? "");
-  const availablePartners = partnersForTenant(tenant?.id) || [];
+  const availablePartners = partnersForTenant(creationTenantId) || [];
   const [erpPartnerId, setErpPartnerId] = useState(
     pipeline?.erpPartnerId ?? partner?.id ?? (availablePartners.length > 0 ? availablePartners[0].id : "")
   );
@@ -350,7 +352,7 @@ export function PipelineConfigForm({
     }
   }, [runCsvTerminal]);
 
-  const canSubmit = name.trim().length >= 2 && (pipeline || tenant);
+  const canSubmit = name.trim().length >= 2 && (pipeline || creationTenantId);
 
   const CONNS = [
     { id: "api", label: "API REST", sub: "HTTP / Bearer", LucideComp: Globe },
@@ -443,7 +445,7 @@ export function PipelineConfigForm({
     } else {
       const np = createPipelineStore({
         id: `mock-pipe-${Date.now()}`,
-        tenantId: tenant.id,
+        tenantId: creationTenantId,
         isCustom: connType === "csv",
         templateKey: connType === "csv" ? null : undefined,
         sourceType: connType === "csv" ? "CSV" : connType,
@@ -947,7 +949,7 @@ export function PipelineConfigForm({
 
   const handleCreate = () => {
     if (!canSubmit) return;
-    if (!pipeline && executionMode === "manual") {
+    if (!pipeline) {
       persist();
       return;
     }

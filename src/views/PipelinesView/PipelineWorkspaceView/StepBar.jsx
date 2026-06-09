@@ -54,8 +54,9 @@ export const PIPELINE_STEPS = [
      pipelineName {string}
      connector   {string}
 ───────────────────────────────────────────────────────────────────────────── */
-export function SideStepBar({ step, onNavigate, pipelineName, connector }) {
+export function SideStepBar({ step, onNavigate, pipelineName, connector, disabledPages = [] }) {
   const progress = Math.round((step / (PIPELINE_STEPS.length - 1)) * 100);
+  const disabledSet = new Set(disabledPages);
 
   return (
     <div
@@ -194,7 +195,8 @@ export function SideStepBar({ step, onNavigate, pipelineName, connector }) {
         {PIPELINE_STEPS.map(({ id, label, desc, Icon: StepIcon }, i) => {
           const isDone = i < step;
           const isActive = i === step;
-          const clickable = isDone && onNavigate;
+          const isDisabled = disabledSet.has(id);
+          const clickable = isDone && onNavigate && !isDisabled;
 
           return (
             <div
@@ -206,7 +208,8 @@ export function SideStepBar({ step, onNavigate, pipelineName, connector }) {
                 gap: 10,
                 padding: "9px 10px",
                 borderRadius: 10,
-                cursor: clickable ? "pointer" : "default",
+                cursor: clickable ? "pointer" : isDisabled ? "not-allowed" : "default",
+                opacity: isDisabled ? 0.45 : 1,
                 background: isActive
                   ? "rgba(217,79,61,.09)"
                   : "transparent",
@@ -216,7 +219,7 @@ export function SideStepBar({ step, onNavigate, pipelineName, connector }) {
                 transition: "all .18s",
                 position: "relative",
               }}
-              title={clickable ? `Aller à : ${label}` : undefined}
+              title={clickable ? `Aller à : ${label}` : isDisabled ? "Étape de ré-import bloquée en mode gestion" : undefined}
             >
               {/* Icon dot */}
               <div

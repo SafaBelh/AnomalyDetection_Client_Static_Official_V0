@@ -506,15 +506,16 @@ export function WSCleaningStep({ onConfirm, onNavigate, parsedRows, amountCol })
               fontSize: 12,
               color: C.success,
               fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
             }}
           >
-            <CheckCircle
-              size={13}
-              color={C.success}
-              style={{ marginRight: 6 }}
-            />{" "}
-            Nettoyage complet — {stats.totalInvoices.toLocaleString()} factures
-            prêtes pour l'analyse.
+            <CheckCircle size={13} color={C.success} />
+            <span>
+              Nettoyage complet — {stats.totalInvoices.toLocaleString()} factures
+              prêtes pour l'analyse.
+            </span>
           </div>
         </>
       )}

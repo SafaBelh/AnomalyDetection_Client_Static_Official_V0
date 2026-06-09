@@ -133,6 +133,24 @@ export const BUDGETS_TABLE = [
   { budget_id: "B-TEL-2026",   tenant_id: "whitecape_ask", year: 2026, ligne_budgetaire: "BUDGET_TEL",   libelle: "Telecom fibre + internet", budget_alloue: 4200.00, montant_engage: 0, montant_consomme: 0, status: "ACTIF" },
 ];
 
+export const SETTINGS_DEFAULTS = {
+  pipelineMode: "automated",
+  alertChannel: "inapp",
+  storageMode: "shared",
+  authMode: "oauth",
+  anomalyMinInvoices: 3,
+  anomalyTolerancePct: 10,
+  lightMode: true,
+  compactMode: false,
+};
+
+export const SETTINGS_OPTIONS = {
+  pipelineModes: [["manual", "Manuel"], ["automated", "Automatise"]],
+  alertChannels: [["inapp", "In-app"], ["email", "Email"], ["webhook", "Webhook mock"]],
+  storageModes: [["shared", "Base partagee"], ["dedicated", "Base isolee"]],
+  authModes: [["oauth", "OAuth 2.0"], ["apikey", "Cle API"], ["basic", "Basic Auth"], ["jdbc", "JDBC"]],
+};
+
 export const USERS_TABLE = [
   { id: U(1), name: "Administrateur", username: "admin", password: "admin123", roles: ["ADMIN"], isEngineAdmin: true, color: "#D94F3D" },
   { id: U(2), name: "Whitecape Technology", username: "whitecapeTech", password: "@whitecapeTech123", roles: ["TENANT"], isEngineAdmin: false, logo: "WH", color: "#3B82F6", automationEnabled: true },
@@ -261,7 +279,7 @@ export const COMMAND_BUDGET_SERIES_TABLE = BUDGETS_TABLE.map((b) => {
 export const CONNECTOR_CONFIG = {
   step1_identity: {
     name: "Ask&Go ERP",
-    description: "Connecteur pour l'ERP Ask&Go de Whitecape Technology",
+    description: "Connecteur ERP multi-tenant pour import, pipelines et budgets",
     type: "ERP",
     authType: "JWT_SIGNED",
   },
@@ -473,6 +491,69 @@ export const GENERIC_SCHEMA = {
   ],
 };
 
+export function normalizeTableName(name = "table") {
+  const clean = String(name)
+    .replace(/\.[^.]+$/, "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+  return clean || "table";
+}
+
+export function buildCsvSchema(files = []) {
+  return {
+    tables: files.map((file, index) => ({
+      name: normalizeTableName(file.tableName || file.name || `csv_table_${index + 1}`),
+      cols: Array.isArray(file.cols) && file.cols.length ? file.cols : ["id", "date", "amount", "status"],
+      rowCount: file.rowCount || 0,
+      source: "csv",
+      fileName: file.name || file.fileName || `csv_table_${index + 1}.csv`,
+    })),
+    rels: [],
+  };
+}
+
+export const CSV_SOURCE_PRESETS = [
+  {
+    type: "facture",
+    label: "Factures CSV",
+    name: "demo_factures_2026.csv",
+    tableName: "factures_csv",
+    cols: ["invoice_ref", "invoice_date", "supplier_code", "supplier_name", "amount", "currency", "category", "status", "tenant_id"],
+    rowCount: 248,
+  },
+  {
+    type: "commande",
+    label: "Commandes CSV",
+    name: "demo_commandes_2026.csv",
+    tableName: "commandes_csv",
+    cols: ["commande_id", "commande_date", "vendor_code", "vendor_name", "amount", "budget_code", "status", "tenant_id"],
+    rowCount: 136,
+  },
+  {
+    type: "budget",
+    label: "Budgets CSV",
+    name: "demo_budgets_2026.csv",
+    tableName: "budgets_csv",
+    cols: ["budget_id", "year", "budget_code", "libelle", "budget_alloue", "montant_engage", "montant_consomme", "tenant_id"],
+    rowCount: 42,
+  },
+];
+
+export function buildApiSchema(resources = []) {
+  return {
+    tables: resources.map((resource, index) => ({
+      name: normalizeTableName(resource.name || resource.path || `api_resource_${index + 1}`),
+      cols: Array.isArray(resource.cols) && resource.cols.length ? resource.cols : ["id", "date", "amount", "status"],
+      rowCount: resource.rowCount || 100,
+      source: "api",
+      endpoint: resource.path || resource.endpoint || "",
+    })),
+    rels: [],
+  };
+}
+
 export const MOCK_SCHEMAS = {
   c1: {
     tables: [
@@ -578,8 +659,6 @@ export const DEMO_CONNECTORS = [
     budgetFormula: [],
     budgetPreset: null,
     budgetAgg: "SUM",
-    alertYellow: "75",
-    alertRed: "90",
     tenants: [
       {
         id: "whitecape_ask",
@@ -606,7 +685,7 @@ export const DEMO_CONNECTORS = [
     category: "erp",
     status: "connected",
     authType: "JWT_SIGNED",
-    description: "Connecteur pour l'ERP LiaDev de Whitecape Technology",
+    description: "Connecteur ERP multi-tenant pour import, pipelines et budgets",
     jdbcUrl: CONNECTOR_CONFIG.step3_database.jdbcUrl,
     jdbcUsername: CONNECTOR_CONFIG.step3_database.jdbcUsername,
     jdbcPassword: CONNECTOR_CONFIG.step3_database.jdbcPassword,
@@ -623,8 +702,6 @@ export const DEMO_CONNECTORS = [
     budgetFormula: [],
     budgetPreset: null,
     budgetAgg: "SUM",
-    alertYellow: "75",
-    alertRed: "90",
     tenants: [
       {
         id: "whitecape_liadev",
@@ -720,7 +797,7 @@ export const CONNECTORS_TABLE = [{
 }, {
   id: "mock-conn-liadev",
   name: "LiaDev ERP",
-  description: "Connecteur pour l'ERP LiaDev de Whitecape Technology",
+  description: "Connecteur ERP multi-tenant pour import, pipelines et budgets",
   type: "ERP",
   authType: "JWT_SIGNED",
   logo: "LD",
@@ -953,8 +1030,6 @@ export function buildWizardDataFromAnswers(a, schemaForConn) {
     jdbcPassword: a.connection?.jdbcPassword || "",
     selectedTables,
     budgetSourceTables: budgetTables,
-    alertYellow: String(a.budget?.alertYellow || 75),
-    alertRed: String(a.budget?.alertRed || 90),
     tenants,
     pipelines: { facture: facturePl, commande: commandePl },
     budgetFormula: [], customPipelines: [], generatedData: {},

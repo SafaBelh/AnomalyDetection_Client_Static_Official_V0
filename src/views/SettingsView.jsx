@@ -2,715 +2,408 @@ import { useEffect, useState } from "react";
 import { DangerZoneSection } from "@/components/ui/DangerZoneSection";
 import { Icon } from "@/components/ui/Icon";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { SeriesToggleRow } from "@/components/ui/SeriesModal";
 import { C } from "@/constants/colors";
 import { useToast } from "@/contexts/ToastContext";
-import { pipelinesForTenant, updatePipelineStore, useAuth, useStore } from "@/store/db";
-import { wsAPI, wsStore } from "@/store/wsAPI";
-import { AuditLogView } from "@/views/AuditLogView";
+import {
+  alertsForTenant,
+  getTenantCredentials,
+  partnersForTenant,
+  pipelinesForTenant,
+  updateTenantCredentials,
+  updateTenantStore,
+  updatePipelineStore,
+  useAuth,
+  useStore,
+  visibleTenants,
+} from "@/store/db";
+import { ALERTS_TABLE, BUDGETS_TABLE, DEMO_CONNECTORS, PIPELINES_TABLE, SETTINGS_DEFAULTS, SETTINGS_OPTIONS, TENANT_CONNECTIONS_TABLE } from "@/store/staticData";
 
-function Toggle({ on, onChange, small = false }) {
-  const w = small ? 40 : 50, h = small ? 22 : 26, knob = small ? 16 : 20, offset = small ? 3 : 3;
+function Card({ children }) {
   return (
-    <div onClick={onChange} style={{ width: w, height: h, borderRadius: 99, background: on ? C.red : "#D1D5DB", cursor: "pointer", position: "relative", transition: "background .3s", flexShrink: 0, boxShadow: on ? "0 0 0 3px rgba(217,79,61,.15)" : "none" }}>
-      <div style={{ position: "absolute", top: offset, left: on ? w - knob - offset : offset, width: knob, height: knob, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 6px rgba(0,0,0,.2)", transition: "left .3s cubic-bezier(.4,0,.2,1)" }} />
-    </div>
-  );
-}
-
-function SectionHeader({ iconName, label, accent = C.red }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, paddingBottom: 14, borderBottom: "1.5px solid rgba(0,0,0,.06)" }}>
-      <div style={{ width: 32, height: 32, borderRadius: 9, background: `${accent}12`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <Icon name={iconName} size={15} color={accent} />
-      </div>
-      <span style={{ fontFamily: "'Instrument Serif',serif", fontSize: 17, fontWeight: 600, color: C.grey900, letterSpacing: "-.2px" }}>{label}</span>
-    </div>
-  );
-}
-
-function Card({ children, style = {} }) {
-  return (
-    <div style={{ background: "#fff", borderRadius: 16, border: "1px solid rgba(0,0,0,.07)", boxShadow: "0 1px 4px rgba(0,0,0,.04)", padding: "22px 24px", ...style }}>
+    <div style={{ background: "#fff", borderRadius: 16, border: "1px solid rgba(0,0,0,.07)", boxShadow: "0 1px 4px rgba(0,0,0,.04)", padding: "22px 24px" }}>
       {children}
     </div>
   );
 }
 
-function FieldRow({ label, value, mono = false, last = false }) {
+function SectionHeader({ icon, title, accent = C.red }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 16, padding: "10px 0", borderBottom: last ? "none" : "1px solid rgba(0,0,0,.05)" }}>
-      <span style={{ fontSize: 12, color: C.grey500, paddingTop: 1 }}>{label}</span>
-      <span style={{ fontSize: 12, fontWeight: 600, color: mono ? C.red : C.grey900, fontFamily: mono ? "'Courier New',monospace" : "inherit", lineHeight: 1.5 }}>{value}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid rgba(0,0,0,.06)" }}>
+      <div style={{ width: 32, height: 32, borderRadius: 9, background: `${accent}12`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon name={icon} size={15} color={accent} />
+      </div>
+      <h2 style={{ margin: 0, fontFamily: "'Instrument Serif',serif", fontSize: 19, color: C.grey900 }}>{title}</h2>
     </div>
   );
 }
 
-export function SettingsView() {
-  const { user, tenant, isAdmin } = useAuth();
-  const toast = useToast();
-  const [activeSection, setActiveSection] = useState("contexte");
-  const [lightMode, setLightMode] = useState(true);
-  const [notifs, setNotifs] = useState({
-    critiques: true,
-    doublons: true,
-    pipeline: true,
-    rapport: false,
-  });
-  const toggleNotif = (k) => setNotifs((n) => ({ ...n, [k]: !n[k] }));
-  useStore();
-
-  // Global pipeline config — wired to actual pipeline store
-  const pipelines = tenant ? pipelinesForTenant(tenant.id) : [];
-  const [selectedPipelineId, setSelectedPipelineId] = useState(null);
-  const selectedPipeline =
-    pipelines.find((p) => p.id === selectedPipelineId) || pipelines[0] || null;
-  const [globalK, setGlobalK] = useState(selectedPipeline?.kFactor ?? 3);
-  const [globalTol, setGlobalTol] = useState(
-    selectedPipeline?.tolerancePct ?? 10
+function Toggle({ value, onChange }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      style={{ width: 48, height: 26, borderRadius: 99, border: "none", background: value ? C.red : C.grey300, padding: 3, cursor: "pointer", display: "flex", justifyContent: value ? "flex-end" : "flex-start", alignItems: "center" }}
+    >
+      <span style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 5px rgba(0,0,0,.22)" }} />
+    </button>
   );
+}
+
+function Row({ label, description, right, last = false }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, padding: "13px 0", borderBottom: last ? "none" : "1px solid rgba(0,0,0,.05)" }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.grey900 }}>{label}</div>
+        {description && <div style={{ fontSize: 11, color: C.grey500, marginTop: 3, lineHeight: 1.5 }}>{description}</div>}
+      </div>
+      <div style={{ flexShrink: 0 }}>{right}</div>
+    </div>
+  );
+}
+
+function Field({ label, value, mono = false, last = false }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "180px minmax(0,1fr)", gap: 14, padding: "10px 0", borderBottom: last ? "none" : "1px solid rgba(0,0,0,.05)" }}>
+      <span style={{ fontSize: 12, color: C.grey500 }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: mono ? C.red : C.grey900, fontFamily: mono ? "'JetBrains Mono',monospace" : "inherit", overflow: "hidden", textOverflow: "ellipsis" }}>{value || "-"}</span>
+    </div>
+  );
+}
+
+function StatGrid({ items }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10 }}>
+      {items.map((item) => (
+        <div key={item.label} style={{ padding: "12px 14px", borderRadius: 12, background: C.grey50, border: `1px solid ${C.grey100}` }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.grey900 }}>{item.value}</div>
+          <div style={{ fontSize: 10, color: C.grey500, marginTop: 2 }}>{item.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Select({ value, onChange, options }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="input-field" style={{ minWidth: 170, fontSize: 12 }}>
+      {options.map((option) => <option key={option[0]} value={option[0]}>{option[1]}</option>)}
+    </select>
+  );
+}
+
+export function SettingsView() {
+  useStore();
+  const { user, tenant, isEngineAdmin } = useAuth();
+  const toast = useToast();
+  const tenants = visibleTenants();
+  const hasTenantContext = !!tenant?.id;
+  const isPlatformSettings = !!isEngineAdmin && !hasTenantContext;
+  const isAdmin = isPlatformSettings;
+  const activeTenant = hasTenantContext ? tenants.find((item) => item.id === tenant.id) || tenant : null;
+  const pipelines = activeTenant ? pipelinesForTenant(activeTenant.id) : [];
+  const alerts = activeTenant ? alertsForTenant(activeTenant.id) : [];
+  const partners = activeTenant ? partnersForTenant(activeTenant.id) : [];
+  const credentials = activeTenant ? getTenantCredentials(activeTenant.id) : null;
+  const budgets = activeTenant ? BUDGETS_TABLE.filter((b) => b.tenant_id === activeTenant.id || b.tenantId === activeTenant.id || activeTenant.username === "whitecapeTech") : [];
+  const settingsPipelines = isPlatformSettings ? PIPELINES_TABLE : pipelines;
+  const settingsAlerts = isPlatformSettings ? ALERTS_TABLE : alerts;
+  const settingsBudgets = isPlatformSettings ? BUDGETS_TABLE : budgets;
+  const connectorIds = new Set(TENANT_CONNECTIONS_TABLE.map((item) => item.connectorId));
+
+  const adminNav = [
+    ["profil_admin", "key", "Profil plateforme"],
+    ["tenants", "tenants", "Tenants & acces"],
+    ["connecteurs", "integrations", "Connecteurs ERP"],
+    ["pipelines", "pipelines", "Pipelines"],
+    ["anomalies", "alerts", "Moteur anomalies"],
+    ["budget", "fileText", "Budget"],
+    ["notifs", "alerts", "Alertes"],
+    ["donnees", "shield", "Donnees"],
+    ["apparence", "eye", "Apparence"],
+    ["danger", "shield", "Zone dangereuse"],
+  ];
+  const tenantNav = [
+    ["profil_tenant", "key", "Profil tenant"],
+    ["compte", "tenants", "Mon compte"],
+    ["erp", "integrations", "Connexion ERP"],
+    ["pipelines", "pipelines", "Pipelines"],
+    ["anomalies", "alerts", "Anomalies"],
+    ["budget", "fileText", "Budget"],
+    ["notifs", "alerts", "Notifications"],
+    ["donnees", "shield", "Donnees"],
+    ["apparence", "eye", "Apparence"],
+    ["danger", "shield", "Zone dangereuse"],
+  ];
+  const nav = isPlatformSettings ? adminNav : tenantNav;
+  const defaultSection = isPlatformSettings ? "profil_admin" : "profil_tenant";
+  const [activeSection, setActiveSection] = useState(defaultSection);
+  const [lightMode, setLightMode] = useState(SETTINGS_DEFAULTS.lightMode);
+  const [compactMode, setCompactMode] = useState(SETTINGS_DEFAULTS.compactMode);
+  const [pipelineMode, setPipelineMode] = useState(SETTINGS_DEFAULTS.pipelineMode);
+  const [alertChannel, setAlertChannel] = useState(SETTINGS_DEFAULTS.alertChannel);
+  const [storageMode, setStorageMode] = useState(SETTINGS_DEFAULTS.storageMode);
+  const [authMode, setAuthMode] = useState(SETTINGS_DEFAULTS.authMode);
+  const [tenantForm, setTenantForm] = useState({ name: "", logo: "", color: "#3B82F6", storage: "shared" });
+  const [accountForm, setAccountForm] = useState({ username: "", password: "" });
 
   useEffect(() => {
-    if (selectedPipeline) {
-      setGlobalK(selectedPipeline.kFactor);
-      setGlobalTol(selectedPipeline.tolerancePct);
-    }
-  }, [selectedPipeline?.id]);
+    setActiveSection(defaultSection);
+  }, [defaultSection]);
 
-  const NAV_SECTIONS = [
-    { id: "contexte", icon: "key", label: "Contexte" },
-    { id: "apparence", icon: "eye", label: "Apparence" },
-    { id: "pipelines_cfg", icon: "pipelines", label: "Config pipelines" },
-    { id: "series", icon: "fileText", label: "Séries" },
-    { id: "mapping", icon: "integrations", label: "Mapping ERP" },
-    { id: "notifs", icon: "alerts", label: "Notifications" },
-    { id: "audit", icon: "clock", label: "Journal d'audit" },
-    { id: "shortcuts", icon: "zap", label: "Raccourcis clavier" },
-    ...(tenant
-      ? [{ id: "espace", icon: "tenants", label: "Compte" }]
-      : []),
-    { id: "danger", icon: "shield", label: "Zone dangereuse", danger: true },
-  ];
+  useEffect(() => {
+    setTenantForm({
+      name: activeTenant?.name || "",
+      logo: activeTenant?.logo || "",
+      color: activeTenant?.color || "#3B82F6",
+      storage: activeTenant?.storage || "shared",
+    });
+    setAccountForm({
+      username: credentials?.username || "",
+      password: credentials?.password || "",
+    });
+  }, [activeTenant?.id, credentials?.username, credentials?.password]);
+
+  const saveTenantProfile = () => {
+    if (!activeTenant) return;
+    updateTenantStore(activeTenant.id, tenantForm);
+    toast("Profil tenant enregistre", "success");
+  };
+
+  const saveAccount = () => {
+    if (!activeTenant) return;
+    updateTenantCredentials(activeTenant.id, accountForm);
+    toast("Compte mis a jour", "success");
+  };
 
   if (!user) return null;
 
-  const content = (() => {
-    if (activeSection === "contexte")
+  const activePipelineCount = settingsPipelines.filter((p) => p.status === "actif" || p.status === "ACTIVE" || p.active).length;
+  const unreadAlerts = settingsAlerts.filter((a) => a.status !== "READ" && a.status !== "RESOLVED").length;
+
+  const renderContent = () => {
+    if (activeSection === "profil_admin") {
       return (
         <Card>
-          <SectionHeader iconName="key" label="Contexte actif" />
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              rowGap: 0,
-              columnGap: 32,
-            }}
-          >
-            {[
-              ["Utilisateur", user.name || "Admin Système"],
-              ["Rôle", user.role || "Admin"],
-              ["Tenant", tenant?.name || "AnomalyAI"],
-              ["Type", tenant?.type || "Platform"],
-            ].map(([k, v], i, arr) => (
-              <div
-                key={k}
-                style={{
-                  padding: "10px 0",
-                  borderBottom:
-                    i < arr.length - 2 ? `1px solid rgba(0,0,0,.05)` : "none",
-                  display: "flex",
-                  gap: 6,
-                  alignItems: "baseline",
-                }}
-              >
-                <span style={{ fontSize: 12, color: C.grey400, minWidth: 80 }}>
-                  {k}
-                </span>
-                <span
-                  style={{ fontSize: 13, fontWeight: 700, color: C.grey900 }}
-                >
-                  {v}
-                </span>
-              </div>
-            ))}
+          <SectionHeader icon="key" title="Profil plateforme" />
+          <StatGrid items={[
+            { label: "Tenants", value: tenants.length.toLocaleString("fr-FR") },
+            { label: "Connecteurs", value: DEMO_CONNECTORS.length.toLocaleString("fr-FR") },
+            { label: "Liens ERP", value: TENANT_CONNECTIONS_TABLE.length.toLocaleString("fr-FR") },
+          ]} />
+          <div style={{ marginTop: 16 }}>
+            <Field label="Utilisateur" value={user.name} />
+            <Field label="Role" value={user.role} />
+            <Field label="Mode" value="Donnees statiques de demonstration" last />
           </div>
         </Card>
       );
+    }
 
-    if (activeSection === "apparence")
+    if (activeSection === "profil_tenant") {
       return (
         <Card>
-          <SectionHeader iconName="eye" label="Apparence" />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "4px 0",
-            }}
-          >
+          <SectionHeader icon="key" title="Profil tenant" />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 12, marginBottom: 16 }}>
             <div>
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: C.grey900,
-                  marginBottom: 3,
-                }}
-              >
-                Thème de l'interface
-              </div>
-              <div style={{ fontSize: 11, color: C.grey400 }}>
-                {lightMode ? "Mode clair actif" : "Mode sombre actif"}
-              </div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: C.grey500, textTransform: "uppercase", marginBottom: 6 }}>Nom</div>
+              <input className="input-field" value={tenantForm.name} onChange={(e) => setTenantForm((f) => ({ ...f, name: e.target.value }))} />
             </div>
-            <Toggle on={lightMode} onChange={() => setLightMode((v) => !v)} />
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: C.grey500, textTransform: "uppercase", marginBottom: 6 }}>Logo</div>
+              <input className="input-field" value={tenantForm.logo} onChange={(e) => setTenantForm((f) => ({ ...f, logo: e.target.value.toUpperCase().slice(0, 4) }))} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: C.grey500, textTransform: "uppercase", marginBottom: 6 }}>Couleur</div>
+              <input type="color" value={tenantForm.color} onChange={(e) => setTenantForm((f) => ({ ...f, color: e.target.value }))} style={{ width: 48, height: 34, border: `1px solid ${C.grey200}`, borderRadius: 8, padding: 2 }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: C.grey500, textTransform: "uppercase", marginBottom: 6 }}>Mode DB</div>
+              <Select value={tenantForm.storage} onChange={(storage) => setTenantForm((f) => ({ ...f, storage }))} options={[["shared", "Base partagee"], ["dedicated", "Base isolee"]]} />
+            </div>
           </div>
+          <Field label="Identifiant" value={activeTenant?.id} mono />
+          <Row label="Apercu" right={<span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 800 }}><span style={{ width: 28, height: 28, borderRadius: 8, background: tenantForm.color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{tenantForm.logo || "?"}</span>{tenantForm.name}</span>} />
+          <button type="button" className="btn-primary" onClick={saveTenantProfile} style={{ marginTop: 12 }}>Enregistrer</button>
         </Card>
       );
+    }
 
-    if (activeSection === "pipelines_cfg")
-      return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <Card>
-            <SectionHeader
-              iconName="pipelines"
-              label="Configuration globale des pipelines"
-            />
-            {pipelines.length === 0 && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: C.grey400,
-                  textAlign: "center",
-                  padding: 20,
-                }}
-              >
-                Aucun pipeline disponible pour ce tenant.
-              </div>
-            )}
-            {pipelines.length > 0 && (
-              <>
-                <div style={{ marginBottom: 16 }}>
-                  <div
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 700,
-                      color: C.grey500,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.07em",
-                      marginBottom: 6,
-                    }}
-                  >
-                    Pipeline à configurer
-                  </div>
-                  <select
-                    value={selectedPipeline?.id || ""}
-                    onChange={(e) => setSelectedPipelineId(e.target.value)}
-                    className="input-field"
-                    style={{ fontSize: 12 }}
-                  >
-                    {pipelines.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {selectedPipeline && (
-                  <>
-                    {/* Active / Pause toggle */}
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "12px 14px",
-                        borderRadius: 12,
-                        background:
-                          selectedPipeline.status === "actif"
-                            ? "rgba(34,197,94,.06)"
-                            : "rgba(107,114,128,.06)",
-                        border: `1.5px solid ${
-                          selectedPipeline.status === "actif"
-                            ? "rgba(34,197,94,.25)"
-                            : C.grey200
-                        }`,
-                        marginBottom: 16,
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 700,
-                            color: C.grey900,
-                            marginBottom: 2,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 7,
-                          }}
-                        >
-                          <Icon
-                            name={
-                              selectedPipeline.status === "actif"
-                                ? "check"
-                                : "pauseCircle"
-                            }
-                            size={14}
-                            color={
-                              selectedPipeline.status === "actif"
-                                ? C.success
-                                : C.grey400
-                            }
-                          />
-                          {selectedPipeline.status === "actif"
-                            ? "Pipeline actif"
-                            : "Pipeline en pause"}
-                        </div>
-                        <div style={{ fontSize: 11, color: C.grey500 }}>
-                          {selectedPipeline.status === "actif"
-                            ? "Traitement des factures en cours"
-                            : "Aucun traitement — les données ne sont pas mises à jour"}
-                        </div>
-                      </div>
-                      <Toggle
-                        on={selectedPipeline.status === "actif"}
-                        onChange={() => {
-                          const next =
-                            selectedPipeline.status === "actif"
-                              ? "paused"
-                              : "actif";
-                          updatePipelineStore(selectedPipeline.id, {
-                            status: next,
-                          });
-                          toast(
-                            next === "actif"
-                              ? "Pipeline activé"
-                              : "Pipeline mis en pause",
-                            "info"
-                          );
-                        }}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 14,
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: 5,
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: C.grey700,
-                            }}
-                          >
-                            Minimum de factures par cluster
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 800,
-                              color: C.red,
-                              fontFamily: "'JetBrains Mono',monospace",
-                            }}
-                          >
-                            {Math.round(globalK)} fact.
-                          </div>
-                        </div>
-                        <input
-                          type="range"
-                          min={1}
-                          max={15}
-                          step={1}
-                          value={globalK}
-                          onChange={(e) => setGlobalK(Number(e.target.value))}
-                          className="slider"
-                          style={{ width: "100%" }}
-                        />
-                        <div
-                          style={{
-                            fontSize: 10,
-                            color: C.grey400,
-                            marginTop: 3,
-                          }}
-                        >
-                          Nombre minimum de factures requis pour former un cluster
-                        </div>
-                      </div>
-                      <div>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: 5,
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: C.grey700,
-                            }}
-                          >
-                            Tolérance globale (%)
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 800,
-                              color: C.purple,
-                              fontFamily: "'JetBrains Mono',monospace",
-                            }}
-                          >
-                            {globalTol}%
-                          </div>
-                        </div>
-                        <input
-                          type="range"
-                          min={1}
-                          max={30}
-                          step={1}
-                          value={globalTol}
-                          onChange={(e) => setGlobalTol(Number(e.target.value))}
-                          className="slider"
-                          style={{ width: "100%" }}
-                        />
-                        <div
-                          style={{
-                            fontSize: 10,
-                            color: C.grey400,
-                            marginTop: 3,
-                          }}
-                        >
-                          Marge acceptée autour de la moyenne par série
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
-                      <button
-                        onClick={() => {
-                          updatePipelineStore(selectedPipeline.id, {
-                            kFactor: globalK,
-                            tolerancePct: globalTol,
-                          });
-                          toast("Pipeline mis à jour", "success");
-                        }}
-                        className="btn-primary"
-                        style={{ fontSize: 12, padding: "8px 18px" }}
-                      >
-                        <Icon name="check" size={13} color="#fff" />
-                        Enregistrer
-                      </button>
-                      <button
-                        onClick={() => {
-                          setGlobalK(selectedPipeline.kFactor);
-                          setGlobalTol(selectedPipeline.tolerancePct);
-                        }}
-                        className="btn-ghost"
-                        style={{ fontSize: 12, padding: "8px 14px" }}
-                      >
-                        Réinitialiser
-                      </button>
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-          </Card>
-        </div>
-      );
-
-    if (activeSection === "danger")
-      return (
-        <DangerZoneSection
-          pipelines={pipelines}
-          tenant={tenant}
-          isAdmin={isAdmin}
-          toast={toast}
-        />
-      );
-
-    if (activeSection === "series")
+    if (activeSection === "compte") {
       return (
         <Card>
-          <SectionHeader
-            iconName="fileText"
-            label="Séries — Vue globale & pause"
-          />
-          {pipelines.length === 0 && (
-            <div
-              style={{
-                fontSize: 12,
-                color: C.grey400,
-                textAlign: "center",
-                padding: 20,
-              }}
-            >
-              Aucun pipeline disponible.
+          <SectionHeader icon="tenants" title="Mon compte" accent={C.info} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 12, marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: C.grey500, textTransform: "uppercase", marginBottom: 6 }}>Nom d'utilisateur</div>
+              <input className="input-field" value={accountForm.username} onChange={(e) => setAccountForm((f) => ({ ...f, username: e.target.value }))} />
             </div>
-          )}
-          <SeriesList pipelines={pipelines} Toggle={Toggle} toast={toast} />
-        </Card>
-      );
-
-    if (activeSection === "mapping")
-      return (
-        <Card>
-          <SectionHeader iconName="integrations" label="Mapping ERP par pipeline" />
-          {pipelines.length === 0 && (
-            <div style={{ fontSize: 12, color: C.grey400, textAlign: "center", padding: 20 }}>
-              Aucun pipeline disponible.
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: C.grey500, textTransform: "uppercase", marginBottom: 6 }}>Mot de passe</div>
+              <input className="input-field" type="password" value={accountForm.password} onChange={(e) => setAccountForm((f) => ({ ...f, password: e.target.value }))} />
             </div>
-          )}
-          {pipelines.length > 0 && (
-            <>
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: C.grey500, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>
-                  Pipeline
-                </div>
-                <select
-                  value={selectedPipeline?.id || ""}
-                  onChange={(e) => setSelectedPipelineId(e.target.value)}
-                  className="input-field"
-                  style={{ fontSize: 12 }}
-                >
-                  {pipelines.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-              {selectedPipeline && (
-                <>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: C.grey700, marginBottom: 12, padding: "8px 12px", background: `${C.info}08`, borderRadius: 8, border: `1px solid ${C.info}20` }}>
-                    {selectedPipeline.name} — {selectedPipeline.connector || "REST"}
-                  </div>
-                  {[
-                    ["Table principale", "EPFTET (en-tête facture)"],
-                    ["Montant analysé", "LOCNETMNT — montant net local"],
-                    ["Date facture", "FACDAT"],
-                    ["Date comptable", "CPTDAT"],
-                    ["Fournisseur", "TIECOD → TIENOM1 (join SERCPTTIE)"],
-                    ["Établissement", "JRNETA"],
-                    ["Code société", "SOCCOD"],
-                    ["Entité comptable", "EPECOD"],
-                    ["Type facture", "FACTYP (FA / AV / CC)"],
-                    ["Statut externe", "EPFEXTSTA (ENCO / VALID / REFUS / PAYE)"],
-                    ["Statut interne", "EPFINTSTA (AT / VA / RE / PA)"],
-                  ].map(([lbl, val], i, arr) => (
-                    <FieldRow key={lbl} label={lbl} value={val} mono last={i === arr.length - 1} />
-                  ))}
-                </>
-              )}
-            </>
-          )}
+          </div>
+          <Field label="Role" value={user.role === "engine_admin" && activeTenant ? "tenant_admin" : user.role} last />
+          <button type="button" className="btn-primary" onClick={saveAccount} style={{ marginTop: 12 }}>Enregistrer</button>
         </Card>
       );
+    }
 
-    if (activeSection === "notifs")
+    if (activeSection === "tenants") {
       return (
         <Card>
-          <SectionHeader iconName="alerts" label="Notifications" />
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {[
-              ["critiques", "Anomalies critiques", "EPFEXTSTA: ENCO"],
-              ["doublons", "Doublons détectés", "TIEMNQ normalisé"],
-              ["pipeline", "Erreurs pipeline", "Connexion JDBC"],
-              ["rapport", "Rapport hebdomadaire", "Automatique · chaque lundi"],
-            ].map(([key, title, sub], i, arr) => (
-              <div
-                key={key}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "13px 0",
-                  borderBottom:
-                    i < arr.length - 1 ? `1px solid rgba(0,0,0,.05)` : "none",
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: C.grey900,
-                      marginBottom: 2,
-                    }}
-                  >
-                    {title}
-                  </div>
-                  <div style={{ fontSize: 11, color: C.grey400 }}>{sub}</div>
-                </div>
-                <Toggle on={notifs[key]} onChange={() => toggleNotif(key)} />
-              </div>
+          <SectionHeader icon="tenants" title="Tenants & acces" accent={C.info} />
+          <Row label="Mode de stockage par defaut" description="Applique aux nouveaux tenants mock." right={<Select value={storageMode} onChange={setStorageMode} options={SETTINGS_OPTIONS.storageModes} />} />
+          <div style={{ marginTop: 14 }}>
+            {tenants.map((item) => (
+              <Field key={item.id} label={item.name} value={`${item.storage === "dedicated" ? "Base isolee" : "Base partagee"} · ${item.invoiceCount || 0} factures`} />
             ))}
           </div>
         </Card>
       );
+    }
 
-    if (activeSection === "espace")
+    if (activeSection === "connecteurs") {
       return (
         <Card>
-          <SectionHeader
-            iconName="tenants"
-            label="Paramètres du compte"
-            accent={C.info}
-          />
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 9, fontWeight: 700, color: C.grey500, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>
-                  Identifiant
-                </div>
-                <input
-                  className="input-field"
-                  defaultValue={user?.name || tenant?.name || ""}
-                  placeholder="Nom d'utilisateur"
-                  style={{ fontSize: 12 }}
-                />
-              </div>
-              <div>
-                <div style={{ fontSize: 9, fontWeight: 700, color: C.grey500, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>
-                  Rôle
-                </div>
-                <input
-                  className="input-field"
-                  value={user?.role || "—"}
-                  disabled
-                  style={{ fontSize: 12, opacity: 0.6 }}
-                />
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 9, fontWeight: 700, color: C.grey500, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>
-                  Adresse email
-                </div>
-                <input
-                  className="input-field"
-                  defaultValue={tenant?.admin_username || ""}
-                  placeholder="email@exemple.com"
-                  style={{ fontSize: 12 }}
-                />
-              </div>
-              <div>
-                <div style={{ fontSize: 9, fontWeight: 700, color: C.grey500, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>
-                  Mot de passe
-                </div>
-                <input
-                  type="password"
-                  className="input-field"
-                  defaultValue={tenant?.admin_password || ""}
-                  placeholder="••••••••"
-                  style={{ fontSize: 12 }}
-                />
-              </div>
-            </div>
-            <div style={{ marginTop: 4, display: "flex", gap: 8 }}>
-              <button className="btn-primary" style={{ fontSize: 12, padding: "8px 18px" }}>
-                Enregistrer les modifications
-              </button>
-            </div>
-          </div>
-        </Card>
-      );
-
-    if (activeSection === "audit")
-      return (
-        <Card>
-          <AuditLogView />
-        </Card>
-      );
-
-    if (activeSection === "shortcuts")
-      return (
-        <Card>
-          <SectionHeader iconName="zap" label="Raccourcis clavier" accent={C.purple} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {[
-              { keys: ["⌘", "K"], desc: "Ouvrir la palette de commandes — recherche globale" },
-              { keys: ["↑", "↓"], desc: "Naviguer dans la palette de commandes" },
-              { keys: ["↵"], desc: "Confirmer la sélection dans la palette" },
-              { keys: ["Échap"], desc: "Fermer modales, palette, panneau notifications" },
-              { keys: ["F"], desc: "Feedback « Confirmé » sur une anomalie sélectionnée" },
-              { keys: ["D"], desc: "Feedback « Faux positif » sur une anomalie sélectionnée" },
-              { keys: ["←", "→"], desc: "Naviguer entre les étapes du workspace pipeline" },
-            ].map((sc, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 12px", borderRadius: 10, background: i % 2 === 0 ? C.grey50 : "transparent" }}>
-                <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                  {sc.keys.map((k, j) => (
-                    <kbd key={j} style={{ padding: "3px 8px", borderRadius: 6, background: C.white, border: `1.5px solid ${C.grey200}`, fontSize: 11, fontWeight: 700, color: C.grey700, fontFamily: "inherit", boxShadow: "0 1px 2px rgba(0,0,0,.06)" }}>{k}</kbd>
-                  ))}
-                </div>
-                <span style={{ fontSize: 12, color: C.grey600, flex: 1 }}>{sc.desc}</span>
-              </div>
+          <SectionHeader icon="integrations" title="Connecteurs ERP" />
+          <StatGrid items={[
+            { label: "Connecteurs", value: DEMO_CONNECTORS.length.toLocaleString("fr-FR") },
+            { label: "Connecteurs lies", value: connectorIds.size.toLocaleString("fr-FR") },
+            { label: "Liens tenants", value: TENANT_CONNECTIONS_TABLE.length.toLocaleString("fr-FR") },
+          ]} />
+          <div style={{ marginTop: 16 }}>
+            <Row label="Authentification par defaut" right={<Select value={authMode} onChange={setAuthMode} options={SETTINGS_OPTIONS.authModes} />} />
+            {DEMO_CONNECTORS.slice(0, 6).map((connector) => (
+              <Field key={connector.id} label={connector.name} value={connector.description || connector.connectorType || "ERP"} />
             ))}
           </div>
         </Card>
       );
+    }
+
+    if (activeSection === "erp") {
+      return (
+        <Card>
+          <SectionHeader icon="integrations" title="Connexion ERP" />
+          <Field label="Statut" value={partners.length ? "Connecte" : "Non connecte"} />
+          <Field label="Connexions" value={String(partners.length)} />
+          <Field label="Connecteur" value={partners[0]?.name || "Aucun"} />
+          <Field label="ID ERP externe" value={partners[0]?.external_tenant_id || "-"} mono last />
+        </Card>
+      );
+    }
+
+    if (activeSection === "pipelines") {
+      return (
+        <Card>
+          <SectionHeader icon="pipelines" title="Pipelines" />
+          <StatGrid items={[
+            { label: "Pipelines", value: settingsPipelines.length.toLocaleString("fr-FR") },
+            { label: "Actifs", value: activePipelineCount.toLocaleString("fr-FR") },
+            { label: "Mode par defaut", value: pipelineMode === "automated" ? "Auto" : "Manuel" },
+          ]} />
+          <div style={{ marginTop: 16 }}>
+            <Row label="Mode d'execution par defaut" right={<Select value={pipelineMode} onChange={setPipelineMode} options={SETTINGS_OPTIONS.pipelineModes} />} />
+            {settingsPipelines.map((pipeline) => (
+              <Row
+                key={pipeline.id}
+                label={pipeline.name}
+                description={`${pipeline.connector || "ERP"} · ${pipeline.status || "actif"}`}
+                right={<Toggle value={pipeline.status === "actif" || pipeline.status === "ACTIVE" || pipeline.active} onChange={(next) => { updatePipelineStore(pipeline.id, { status: next ? "actif" : "paused" }); toast(next ? "Pipeline active" : "Pipeline mis en pause", "info"); }} />}
+              />
+            ))}
+          </div>
+        </Card>
+      );
+    }
+
+    if (activeSection === "anomalies") {
+      return (
+        <Card>
+          <SectionHeader icon="alerts" title={isAdmin ? "Moteur anomalies" : "Anomalies"} />
+          <Row label="Minimum de factures" description="Nombre minimum requis pour analyser une serie." right={<span style={{ fontSize: 12, fontWeight: 800 }}>{SETTINGS_DEFAULTS.anomalyMinInvoices} fact.</span>} />
+          <Row label="Tolerance d'ecart" description="Marge avant signalement d'une anomalie." right={<span style={{ fontSize: 12, fontWeight: 800 }}>{SETTINGS_DEFAULTS.anomalyTolerancePct}%</span>} />
+          <Row label="Types affiches" description="Montant inhabituel, frequence inhabituelle, doublon, ecart habituel." right={<span style={{ fontSize: 11, color: C.grey500 }}>Moteur</span>} last />
+        </Card>
+      );
+    }
+
+    if (activeSection === "budget") {
+      return (
+        <Card>
+          <SectionHeader icon="fileText" title="Budget" accent={C.purple} />
+          <StatGrid items={[
+            { label: "Exercice", value: String(new Date().getFullYear()) },
+            { label: "Lignes budget", value: settingsBudgets.length.toLocaleString("fr-FR") },
+            { label: "Saisonnalite", value: "Auto" },
+          ]} />
+          <div style={{ marginTop: 16 }}>
+            <Row label="Alertes budget" description="Déduites automatiquement par série selon le rythme, la saisonnalité et la projection moteur." right={<span style={{ fontSize: 11, color: C.grey500 }}>Moteur</span>} last />
+          </div>
+        </Card>
+      );
+    }
+
+    if (activeSection === "notifs") {
+      return (
+        <Card>
+          <SectionHeader icon="alerts" title={isAdmin ? "Alertes" : "Notifications"} />
+          <StatGrid items={[
+            { label: "Alertes", value: settingsAlerts.length.toLocaleString("fr-FR") },
+            { label: "Non lues", value: unreadAlerts.toLocaleString("fr-FR") },
+            { label: "Canal", value: alertChannel === "inapp" ? "In-app" : alertChannel },
+          ]} />
+          <div style={{ marginTop: 16 }}>
+            <Row label="Canal principal" right={<Select value={alertChannel} onChange={setAlertChannel} options={SETTINGS_OPTIONS.alertChannels} />} />
+            <Row label="Marquer tout lu" description="Operation simulee sur les alertes mock." right={<button type="button" className="btn-ghost" onClick={() => toast("Toutes les alertes marquees comme lues", "success")}>Marquer tout lu</button>} last />
+          </div>
+        </Card>
+      );
+    }
+
+    if (activeSection === "donnees") {
+      return (
+        <Card>
+          <SectionHeader icon="shield" title="Donnees" />
+          <Field label="Source" value="Donnees statiques mock" />
+          <Field label="Tenants" value={tenants.length.toLocaleString("fr-FR")} />
+          <Field label="Connecteurs" value={DEMO_CONNECTORS.length.toLocaleString("fr-FR")} />
+          <Field label={isPlatformSettings ? "Budgets" : "Budgets tenant"} value={settingsBudgets.length.toLocaleString("fr-FR")} last />
+        </Card>
+      );
+    }
+
+    if (activeSection === "apparence") {
+      return (
+        <Card>
+          <SectionHeader icon="eye" title="Apparence" />
+          <Row label="Theme clair" description="Preference locale de demonstration." right={<Toggle value={lightMode} onChange={setLightMode} />} />
+          <Row label="Cartes compactes" description="Reduit visuellement l'espacement." right={<Toggle value={compactMode} onChange={setCompactMode} />} last />
+        </Card>
+      );
+    }
+
+    if (activeSection === "danger") {
+      return <DangerZoneSection pipelines={pipelines} tenant={activeTenant} isAdmin={isAdmin} toast={toast} />;
+    }
 
     return null;
-  })();
+  };
 
   return (
-    <div
-      className="fade-up"
-      style={{
-        padding: "28px 24px",
-        height: "calc(100vh - 68px)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 0,
-        overflow: "hidden",
-      }}
-    >
-      <PageHeader eyebrow="Configuration" title="Paramètres" subtitle="Compte · pipelines · audit · sécurité" />
-
-      {/* Two-column layout */}
-      <div
-        style={{
-          flex: 1,
-          display: "grid",
-          gridTemplateColumns: "200px 1fr",
-          gap: 16,
-          overflow: "hidden",
-        }}
-      >
-        {/* Left nav rail */}
-        <div
-          className="glass-card"
-          style={{
-            padding: "10px 8px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
-            height: "fit-content",
-          }}
-        >
-          {NAV_SECTIONS.map((s) => [
-            s.danger && (
-              <div
-                key={s.id + "_sep"}
-                style={{ height: 1, background: C.grey200, margin: "6px 4px" }}
-              />
-            ),
+    <div className="fade-up" style={{ padding: "28px 24px", display: "flex", flexDirection: "column", gap: 0 }}>
+      <PageHeader
+        eyebrow={isPlatformSettings ? "Configuration" : "Mon espace"}
+        title="Parametres"
+        subtitle={isPlatformSettings ? "Profil · tenants · pipelines · audit · securite" : "Profil · compte · pipelines · anomalies · budget"}
+      />
+      <div style={{ display: "grid", gridTemplateColumns: "210px minmax(0,1fr)", gap: 16, alignItems: "start" }}>
+        <div className="glass-card" style={{ padding: "10px 8px", display: "flex", flexDirection: "column", gap: 2 }}>
+          {nav.map(([id, icon, label]) => (
             <button
-              key={s.id}
-              onClick={() => setActiveSection(s.id)}
+              key={id}
+              type="button"
+              onClick={() => setActiveSection(id)}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -718,86 +411,24 @@ export function SettingsView() {
                 padding: "8px 12px",
                 borderRadius: 9,
                 fontSize: 12,
-                fontWeight: 600,
+                fontWeight: 700,
                 cursor: "pointer",
                 border: "none",
                 textAlign: "left",
                 width: "100%",
-                transition: "all .18s",
                 fontFamily: "inherit",
-                background:
-                  activeSection === s.id
-                    ? s.danger
-                      ? "linear-gradient(135deg,#991b1b,#D94F3D)"
-                      : "linear-gradient(135deg,#D94F3D,#E8736A)"
-                    : "transparent",
-                color:
-                  activeSection === s.id
-                    ? "#fff"
-                    : s.danger
-                    ? C.red
-                    : C.grey600,
-                boxShadow:
-                  activeSection === s.id
-                    ? "0 4px 14px rgba(217,79,61,.25)"
-                    : "none",
+                background: activeSection === id ? "linear-gradient(135deg,#D94F3D,#E8736A)" : "transparent",
+                color: activeSection === id ? "#fff" : id === "danger" ? C.red : C.grey600,
+                boxShadow: activeSection === id ? "0 4px 14px rgba(217,79,61,.25)" : "none",
               }}
             >
-              <Icon
-                name={s.icon}
-                size={14}
-                color={
-                  activeSection === s.id ? "#fff" : s.danger ? C.red : C.grey500
-                }
-              />
-              {s.label}
-            </button>,
-          ])}
+              <Icon name={icon} size={14} color={activeSection === id ? "#fff" : id === "danger" ? C.red : C.grey500} />
+              {label}
+            </button>
+          ))}
         </div>
-
-        {/* Right content */}
-        <div style={{ overflowY: "auto", paddingRight: 2 }}>{content}</div>
+        <div key={activeSection} style={{ minWidth: 0 }}>{renderContent()}</div>
       </div>
     </div>
   );
-}
-
-function SeriesList({ pipelines, Toggle, toast }) {
-  const [seriesMap, setSeriesMap] = useState({});
-  useEffect(() => {
-    (async () => {
-      const map = {};
-      await Promise.all(pipelines.map(async (p) => {
-        if (!p.workspaceStarted) { map[p.id] = []; return; }
-        try {
-          wsStore.activePipelineId = p.id;
-          const data = await wsAPI.listSeries();
-          map[p.id] = Array.isArray(data) ? data : [];
-        } catch (e) { map[p.id] = []; }
-      }));
-      setSeriesMap(map);
-    })();
-  }, [pipelines]);
-  return pipelines.map((p) => {
-    const wsSeries = seriesMap[p.id] || [];
-    return (
-      <div key={p.id} style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: C.grey900, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: p.status === "actif" ? C.success : C.grey400, display: "inline-block" }} />
-          {p.name}
-          <span style={{ fontSize: 9, color: C.grey500, fontWeight: 400 }}>({wsSeries.length} séries)</span>
-        </div>
-        {wsSeries.length === 0 && (
-          <div style={{ fontSize: 11, color: C.grey400, padding: "6px 0 10px", borderBottom: `1px solid ${C.grey100}` }}>
-            Pipeline non démarré — aucune série configurée.
-          </div>
-        )}
-        <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 10 }}>
-          {wsSeries.map((s) => (
-            <SeriesToggleRow key={s.id} series={{ ...s, paused: s.active === false }} Toggle={Toggle} toast={toast} />
-          ))}
-        </div>
-      </div>
-    );
-  });
 }

@@ -146,11 +146,13 @@ export function PipelinesView({ onNavigateToPipeline, onOpenSeriesConfig }) {
             <div
               key={p.id}
               className="glass-card"
+              onClick={() => onNavigateToPipeline(p.id, "seriesConfig", { mode: "manage" })}
               style={{
                 padding: 20,
                 display: "flex",
                 flexDirection: "column",
                 gap: 12,
+                cursor: "pointer",
               }}
             >
               <div
@@ -161,14 +163,12 @@ export function PipelinesView({ onNavigateToPipeline, onOpenSeriesConfig }) {
                   gap: 10,
                 }}
               >
-                <button
-                  onClick={() => onNavigateToPipeline(p.id)}
+                <div
                   style={{
                     flex: 1,
                     textAlign: "left",
                     background: "none",
                     border: "none",
-                    cursor: "pointer",
                     padding: 0,
                   }}
                 >
@@ -202,7 +202,7 @@ export function PipelinesView({ onNavigateToPipeline, onOpenSeriesConfig }) {
                     />
                     {p.connector} · {p.freq}
                   </div>
-                </button>
+                </div>
                 <span
                   style={{
                     display: "inline-flex",
@@ -356,28 +356,38 @@ export function PipelinesView({ onNavigateToPipeline, onOpenSeriesConfig }) {
                 </span>
                 <div style={{ display: "flex", gap: 5 }}>
                   <button
-                    onClick={() => setAuditPipeline(p)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setAuditPipeline(p);
+                    }}
                     className="btn-icon"
                     title="Audit du dernier run"
                   >
                     <Icon name="fileText" size={15} color={C.grey600} />
                   </button>
                   <button
-                    onClick={() => setMlPipeline(p)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMlPipeline(p);
+                    }}
                     className="btn-icon"
                     title="Analyse ML"
                   >
                     <Icon name="sparkle" size={15} color={C.grey600} />
                   </button>
                   <button
-                    onClick={() => setConfigPipeline(p)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setConfigPipeline(p);
+                    }}
                     className="btn-icon"
                     title="Configurer"
                   >
                     <Icon name="gear" size={15} color={C.grey600} />
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={(event) => {
+                      event.stopPropagation();
                       updatePipelineStore(p.id, {
                         status: isPaused ? "actif" : "paused",
                       });
@@ -525,8 +535,13 @@ export function PipelinesView({ onNavigateToPipeline, onOpenSeriesConfig }) {
       >
         <PipelineConfigForm
           mode="wizard"
+          tenantId={tenant?.id || adminTenantFilter || allTenants[0]?.id || null}
           onCancel={() => setShowCreate(false)}
           onSubmitted={(id) => {
+            if (!id) {
+              toast("Impossible de créer le pipeline : aucun tenant sélectionné", "error");
+              return;
+            }
             setShowCreate(false);
             openWorkspaceModal(id);
             toast("Pipeline créé !", "success");

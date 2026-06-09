@@ -47,7 +47,7 @@ function AppShell() {
             <Routes>
               <Route path="/dashboard" element={<DashboardView onNavigate={goto} />} />
               <Route path="/pipelines" element={<PipelinesView
-                onNavigateToPipeline={(id, step = "mapping") => navigate(`/pipelines/${id}/${step}`)}
+                onNavigateToPipeline={(id, step = "mapping", options = {}) => navigate(`/pipelines/${id}/${step}${options.mode ? `?mode=${options.mode}` : ""}`)}
                 onOpenSeriesConfig={(id) => navigate(`/pipelines/${id}/seriesConfig`)} />} />
               <Route path="/explorer" element={<ExplorerView />} />
               <Route path="/anomalies" element={<AnomaliesView />} />
@@ -69,6 +69,8 @@ function AppShell() {
 function WorkspaceRoute() {
   const { id, step } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const workspaceMode = new URLSearchParams(location.search).get("mode") || "setup";
   const workspaceCacheKey = `anomalyiq.workspace.${id}`;
   const cachedWorkspace = (() => {
     try { return JSON.parse(localStorage.getItem(workspaceCacheKey) || "null"); } catch { return null; }
@@ -102,6 +104,7 @@ function WorkspaceRoute() {
       <div style={{ minHeight: "100vh" }}>
         <PipelineWorkspaceView
           pipelineId={id}
+          workspaceMode={workspaceMode}
           wsPage={wsPage} setWsPage={setWsPage}
           wsUploadData={wsUploadData} setWsUploadData={setWsUploadData}
           wsMappingResult={wsMappingResult} setWsMappingResult={setWsMappingResult}

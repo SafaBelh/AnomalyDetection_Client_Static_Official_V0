@@ -85,7 +85,7 @@ export function AdminDashboardView({ onNavigate }) {
 
   // ── Database storage mode distribution (donut) ─────────────────────────
   const storageModeDist = useMemo(() => {
-    const m = {};
+    const m = { "Base partagée": 0, "Base isolée": 0 };
     tenants.forEach((t) => {
       const mode = t.storage === "dedicated" || t.storage === "isolated" ? "Base isolée" : "Base partagée";
       m[mode] = (m[mode] || 0) + 1;
@@ -1159,7 +1159,7 @@ export function AdminDashboardView({ onNavigate }) {
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart
                   data={invoiceVolumeData}
-                  margin={{ top: 4, right: 16, bottom: 4, left: 4 }}
+                  margin={{ top: 22, right: 16, bottom: 4, left: 4 }}
                 >
                   <CartesianGrid
                     strokeDasharray="3 3"
@@ -1186,6 +1186,7 @@ export function AdminDashboardView({ onNavigate }) {
                     <LabelList
                       dataKey="amount"
                       position="top"
+                      offset={8}
                       formatter={fmtK}
                       style={{ fill: C.grey500, fontSize: 10 }}
                     />

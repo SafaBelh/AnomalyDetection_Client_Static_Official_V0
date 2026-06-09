@@ -22,7 +22,7 @@ export function ToastProvider({ children }) {
       <div
         style={{
           position: "fixed",
-          bottom: 24,
+          top: 24,
           right: 24,
           zIndex: 9999,
           display: "flex",
@@ -35,8 +35,8 @@ export function ToastProvider({ children }) {
             key={t.id}
             className="fade-in"
             style={{
-              background: "rgba(24,25,28,.94)",
-              color: "#fff",
+              background: "rgba(255,255,255,.96)",
+              color: C.grey800,
               borderRadius: 12,
               padding: "12px 16px",
               fontSize: 13,
@@ -44,7 +44,8 @@ export function ToastProvider({ children }) {
               display: "flex",
               alignItems: "center",
               gap: 10,
-              boxShadow: "0 8px 32px rgba(0,0,0,.25)",
+              boxShadow: "0 14px 38px rgba(17,24,39,.14)",
+              border: `1px solid ${C.grey200}`,
               borderLeft: `3px solid ${colors[t.type] || C.info}`,
               maxWidth: 320,
             }}

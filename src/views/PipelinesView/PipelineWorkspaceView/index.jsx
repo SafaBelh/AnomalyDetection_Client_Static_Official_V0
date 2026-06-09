@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Maximize2, RotateCcw, ScrollText, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Maximize2, RotateCcw, ScrollText, X } from "lucide-react";
 import { C } from "@/constants/colors";
 import { getPipeline, db, emit, invoicesForTenant, updatePipelineStore } from "@/store/db";
 import { wsAPI, wsStore } from "@/store/wsAPI";
@@ -14,6 +14,7 @@ import { WSSeriesBuilder } from "./SeriesBuilder";
 import { WSSeriesConfig } from "./SeriesConfigStep";
 import { SideStepBar, PIPELINE_STEPS } from "./StepBar";
 import { PipelineRunReportDrawer } from "@/views/PipelinesView/PipelineRunReportDrawer";
+import { useToast } from "@/contexts/ToastContext";
 
 /* ─────────────────────────────────────────────────────────────────────────
    Step page ↔ index mapping
@@ -26,6 +27,7 @@ const STEP_PAGES = [
   "seriesConfig",
   "dashboard",
 ];
+const MANAGE_PAGES = new Set(["mapping", "seriesConfig", "dashboard"]);
 
 /* ─────────────────────────────────────────────────────────────────────────
    Step header chip — small breadcrumb shown above each step's content
@@ -343,6 +345,7 @@ function buildLocalDashboardData(invoices, series) {
 ───────────────────────────────────────────────────────────────────────── */
 export function PipelineWorkspaceView({
   pipelineId,
+  workspaceMode = "setup",
   onBack,
   inModal = false,
   onOpenFullPage = null,
@@ -358,7 +361,9 @@ export function PipelineWorkspaceView({
   setWsFinalResult,
   resetWsState,
 }) {
+  const toast = useToast();
   const pipeline = getPipeline(pipelineId);
+  const manageMode = workspaceMode === "manage";
   const autoRunStarted = useRef(false);
   const page = wsPage ?? "mapping";
   const setPage = setWsPage ?? (() => {});
@@ -377,13 +382,16 @@ export function PipelineWorkspaceView({
 
   const pipelineConfig = useMemo(() => readConfig(pipeline), [pipeline]);
   const isAutomated = pipelineConfig?.automation?.autoRun === true || pipelineConfig?.automation?.mode === "automated" || pipelineConfig?.executionMode === "automated";
+  const existingInvoices = useMemo(() => pipeline ? invoiceRowsForPipeline(pipeline) : [], [pipeline]);
+  const existingSeries = useMemo(() => pipeline ? buildLocalSeries(existingInvoices, pipelineConfig) : [], [pipeline, existingInvoices, pipelineConfig]);
+  const existingDashboard = useMemo(() => buildLocalDashboardData(existingInvoices, seriesResult?.series || existingSeries), [existingInvoices, seriesResult, existingSeries]);
 
   useEffect(() => {
     wsStore.activePipelineId = pipelineId;
   }, [pipelineId]);
 
   useEffect(() => {
-    if (!pipeline || !isAutomated || finalResult || autoRunStarted.current) return;
+    if (manageMode || !pipeline || !isAutomated || finalResult || autoRunStarted.current) return;
     autoRunStarted.current = true;
     setPage("dashboard-loading");
     const timer = setTimeout(() => {
@@ -410,7 +418,7 @@ export function PipelineWorkspaceView({
       setPage("dashboard");
     }, 1200);
     return () => clearTimeout(timer);
-  }, [pipeline, isAutomated, finalResult, setMappingResult, setSeriesResult, setFinalResult, setPage, pipelineConfig]);
+  }, [manageMode, pipeline, isAutomated, finalResult, setMappingResult, setSeriesResult, setFinalResult, setPage, pipelineConfig]);
 
   useEffect(() => {
     if (!pipeline || page !== "dashboard-loading" || finalResult) return;
@@ -442,6 +450,7 @@ export function PipelineWorkspaceView({
 
   const handleNavigate = (idx) => {
     const target = STEP_PAGES[idx];
+    if (manageMode && target && !MANAGE_PAGES.has(target)) return;
     if (target) setPage(target);
   };
 
@@ -492,12 +501,41 @@ export function PipelineWorkspaceView({
   const renderStep = () => {
     if (page === "dashboard-loading") return <LoadingScreen />;
 
+    if (manageMode && !MANAGE_PAGES.has(page)) {
+      return (
+        <div className="glass-card" style={{ padding: 22, borderRadius: 18, border: `1px solid rgba(245,158,11,.25)`, background: "rgba(255,255,255,.86)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, color: C.warning, fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
+            <AlertCircle size={16} /> Étape de ré-import bloquée
+          </div>
+          <div style={{ fontSize: 12, color: C.grey600, lineHeight: 1.55 }}>
+            Ce pipeline existe déjà. Pour éviter d'importer les mêmes données deux fois, seules les actions de gestion sont disponibles ici : mapping, configuration des séries et dashboard.
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <button className="btn-primary" onClick={() => setPage("seriesConfig")} style={{ fontSize: 12 }}>Gérer les séries</button>
+            <button className="btn-ghost" onClick={() => setPage("mapping")} style={{ fontSize: 12 }}>Modifier le mapping</button>
+          </div>
+        </div>
+      );
+    }
+
     if (page === "mapping")
       return (
         <WSMappingStep
           uploadData={uploadData}
+          manageMode={manageMode}
           onConfirm={(d) => {
             setMappingResult(d);
+            if (manageMode) {
+              updatePipelineStore(pipeline.id, {
+                configJson: {
+                  ...(pipelineConfig || {}),
+                  mapping: {
+                    cols: d.cols || {},
+                    extraCols: d.extraCols || [],
+                  },
+                },
+              });
+            }
             if (d.statusConfig) {
               updatePipelineStore(pipeline.id, {
                 configJson: {
@@ -511,7 +549,8 @@ export function PipelineWorkspaceView({
                 extraData: JSON.stringify(d.extraCols),
               });
             }
-            setPage("cleaning");
+            if (manageMode) toast("Mapping enregistré", "success");
+            setPage(manageMode ? "seriesConfig" : "cleaning");
           }}
           onNavigate={handleNavigate}
         />
@@ -551,8 +590,26 @@ export function PipelineWorkspaceView({
     if (page === "seriesConfig")
       return (
         <WSSeriesConfig
-          series={seriesResult?.series || []}
-          onConfirm={async () => {
+          series={seriesResult?.series || existingSeries}
+          onConfirm={async (updatedSeries) => {
+            if (manageMode) {
+              setSeriesResult({ ...(seriesResult || {}), series: updatedSeries || existingSeries });
+              updatePipelineStore(pipeline.id, {
+                configJson: {
+                  ...(pipelineConfig || {}),
+                  seriesOverrides: (updatedSeries || existingSeries).map((item) => ({
+                    id: item.id,
+                    tolerance_pct: item.tolerance_pct,
+                    tolerance_days: item.tolerance_days,
+                    use_seasonality: item.use_seasonality,
+                    forecast_start_today: item.forecast_start_today,
+                    active: item.active !== false,
+                  })),
+                },
+              });
+              toast("Changements enregistrés", "success");
+              return;
+            }
             setPage("dashboard-loading");
             try {
               await wsAPI.runDetection();
@@ -597,6 +654,8 @@ export function PipelineWorkspaceView({
               setPage("dashboard");
             }
           }}
+          confirmLabel={manageMode ? "Enregistrer les changements" : "Sauvegarder la configuration"}
+          saveLocalOnly={manageMode}
           onNavigate={handleNavigate}
         />
       );
@@ -610,10 +669,11 @@ export function PipelineWorkspaceView({
             </button>
           </div>
           <WSFullDashboard
-            {...finalResult}
-            series={seriesResult?.series || []}
+            {...(finalResult || existingDashboard)}
+            series={seriesResult?.series || existingSeries}
             groupFields={seriesResult?.groupFields || []}
             onReset={reset}
+            manageMode={manageMode}
           />
         </>
       );
@@ -685,7 +745,7 @@ export function PipelineWorkspaceView({
                 color: C.grey500,
                 display: "flex",
                 alignItems: "center",
-                gap: 4,
+                gap: 8,
                 marginTop: 1,
               }}
             >
@@ -699,22 +759,31 @@ export function PipelineWorkspaceView({
                   boxShadow: pipeline.status === "paused" ? `0 0 0 3px rgba(107,114,128,.16)` : `0 0 0 3px rgba(34,197,94,.2)`,
                 }}
               />
-              Pipeline {pipeline.status === "paused" ? "en pause" : "actif"} ·{" "}
-              <span style={{ color: C.success, fontWeight: 600 }}><CheckCircle2 size={10} style={{marginRight:3}}/> Données demo</span>
+              <span>Pipeline {pipeline.status === "paused" ? "en pause" : "actif"}</span>
+              <span style={{ color: C.success, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                <CheckCircle2 size={10} /> Données demo
+              </span>
+              {manageMode && (
+                <span style={{ color: C.warning, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                  <AlertCircle size={10} /> Mode gestion
+                </span>
+              )}
             </div>
           </div>
         </div>
 
         {/* Right: actions */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button
-            onClick={reset}
-            className="btn-ghost"
-            style={{ fontSize: 11, padding: "6px 12px", gap: 5 }}
-          >
-            <RotateCcw size={12} color={C.grey500} />
-            Nouveau CSV
-          </button>
+          {!manageMode && (
+            <button
+              onClick={reset}
+              className="btn-ghost"
+              style={{ fontSize: 11, padding: "6px 12px", gap: 5 }}
+            >
+              <RotateCcw size={12} color={C.grey500} />
+              Nouveau CSV
+            </button>
+          )}
 
           {onOpenFullPage && (
             <button
@@ -744,6 +813,7 @@ export function PipelineWorkspaceView({
             onNavigate={handleNavigate}
             pipelineName={pipeline.name}
             connector={pipeline.connector}
+            disabledPages={manageMode ? ["cleaning", "clusterEDA", "seriesBuilder"] : []}
           />
         )}
 
@@ -774,6 +844,18 @@ export function PipelineWorkspaceView({
                 padding: "0 24px 40px",
               }}
             >
+              {manageMode && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(245,158,11,.24)", background: "rgba(245,158,11,.07)", marginBottom: 12 }}>
+                  <AlertCircle size={15} color={C.warning} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: C.grey800 }}>Gestion du pipeline existant</div>
+                    <div style={{ fontSize: 11, color: C.grey500, lineHeight: 1.45, marginTop: 2 }}>
+                      Les actions de ré-import, nettoyage, clustering et redétection sont bloquées pour éviter de charger les mêmes données deux fois. Vous pouvez modifier le mapping ou les séries, puis enregistrer.
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Step header chip */}
               <StepHeader
                 stepIdx={stepIdx}

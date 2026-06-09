@@ -69,8 +69,8 @@ export function useAuth() {
   useStore();
   const storedUser = getUser();
   const hasToken = !!getToken();
-  const isEngineAdmin = storedUser?.isEngineAdmin || db.isEngineAdmin || false;
-  const isSSO = storedUser?.isSSO || db.isSSO || false;
+  const isEngineAdmin = storedUser ? !!storedUser.isEngineAdmin : !!db.isEngineAdmin;
+  const isSSO = storedUser ? !!storedUser.isSSO : !!db.isSSO;
 
   let userObj = null;
   if (hasToken && storedUser) {
@@ -371,6 +371,33 @@ export function getTenantCredentials(tenantId) {
     tenantCreds.set(tenantId, { username: t.username || "admin", password: "••••••••••••••••" });
   }
   return tenantCreds.get(tenantId);
+}
+
+export function updateTenantStore(id, data = {}) {
+  const applyPatch = (t) => {
+    if (!t) return;
+    if (data.name != null) t.name = data.name;
+    if (data.logo != null) t.logo = data.logo;
+    if (data.color != null) t.color = data.color;
+    if (data.storage != null) t.storage = data.storage;
+    if (data.automationEnabled != null) t.automationEnabled = data.automationEnabled;
+    if (data.username != null) t.username = data.username;
+  };
+  applyPatch(_cache.tenants.find(t => t.id === id));
+  applyPatch(USERS_TABLE.find(t => t.id === id));
+  if (db.activeTenantId === id && data.name != null) db.activeTenantName = data.name;
+  emit();
+}
+
+export function updateTenantCredentials(tenantId, data = {}) {
+  const current = getTenantCredentials(tenantId);
+  const next = {
+    username: data.username ?? current.username,
+    password: data.password ?? current.password,
+  };
+  tenantCreds.set(tenantId, next);
+  updateTenantStore(tenantId, { username: next.username });
+  return next;
 }
 
 export function createPipelineStore(data) {

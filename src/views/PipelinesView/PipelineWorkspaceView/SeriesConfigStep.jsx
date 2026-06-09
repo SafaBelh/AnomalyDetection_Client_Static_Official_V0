@@ -30,6 +30,8 @@ export function WSSeriesConfig({
   onNavigate,
   showActiveToggle = false,
   onSeriesChange = null,
+  confirmLabel = "Sauvegarder la configuration",
+  saveLocalOnly = false,
 }) {
   const [series, setSeries] = useState(
     (Array.isArray(initSeries) ? initSeries : []).map((s) => ({ ...s, _dirty: false, active: s.active !== false }))
@@ -147,19 +149,24 @@ export function WSSeriesConfig({
     setSaving(true);
     setErr(null);
     try {
-      await Promise.all(
-        series
-          .filter((x) => x._dirty)
-          .map((x) =>
-            wsAPI.updateSeriesConfig(x.id, {
-              use_seasonality: x.use_seasonality,
-              tolerance_pct: x.tolerance_pct,
-              tolerance_days: x.tolerance_days,
-              forecast_start_today: x.forecast_start_today,
-            })
-          )
-      );
-      onConfirm(series.map((u) => ({ ...u })));
+      if (!saveLocalOnly) {
+        await Promise.all(
+          series
+            .filter((x) => x._dirty)
+            .map((x) =>
+              wsAPI.updateSeriesConfig(x.id, {
+                use_seasonality: x.use_seasonality,
+                tolerance_pct: x.tolerance_pct,
+                tolerance_days: x.tolerance_days,
+                forecast_start_today: x.forecast_start_today,
+              })
+            )
+        );
+      }
+      const savedSeries = series.map((u) => ({ ...u, _dirty: false }));
+      onConfirm(savedSeries);
+      setSeries(savedSeries);
+      setSaving(false);
     } catch (e) {
       setErr(e.message);
       setSaving(false);
@@ -225,9 +232,8 @@ export function WSSeriesConfig({
                   borderRadius: 9,
                   marginBottom: 4,
                   cursor: "pointer",
-                  background: selected === i ? C.redPale : "transparent",
-                  boxShadow:
-                    selected === i ? `inset 0 0 0 1.5px ${C.red}` : "none",
+                  background: selected === i ? `${CC[i % CC.length]}14` : "transparent",
+                  border: `1px solid ${selected === i ? `${CC[i % CC.length]}30` : "transparent"}`,
                   opacity: s2.active !== false ? 1 : 0.55,
                 }}
               >
@@ -729,19 +735,19 @@ export function WSSeriesConfig({
           {rhythmData.length > 0 && (
             <div
               className="glass-card"
-              style={{ padding: 18, marginBottom: 12, borderRadius: 18 }}
+              style={{ padding: 16, marginBottom: 12, borderRadius: 18 }}
             >
-              <div style={{ fontSize: 14, fontWeight: 800, color: C.grey700, marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.grey600, marginBottom: 8 }}>
                 Écarts entre factures (jours)
               </div>
-              <div style={{ display: "flex", gap: 34, marginBottom: 10 }}>
-                <div>
-                  <div style={{ fontSize: 28, fontWeight: 900, color: C.info }}>{rhythmData[0]?.median || 30}j</div>
-                  <div style={{ fontSize: 12, color: C.grey500 }}>Écart médian</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                <div style={{ padding: "5px 9px", borderRadius: 8, background: C.grey50, border: `1px solid ${C.grey100}` }}>
+                  <span style={{ fontSize: 10, color: C.grey500 }}>Écart médian </span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: C.info }}>{rhythmData[0]?.median || 30}j</span>
                 </div>
-                <div>
-                  <div style={{ fontSize: 28, fontWeight: 900, color: C.success }}>{s.rhythm || s.frequencyLabel || rhythmLabel(rhythmData[0]?.median || 30)}</div>
-                  <div style={{ fontSize: 12, color: C.grey500 }}>Rythme détecté</div>
+                <div style={{ padding: "5px 9px", borderRadius: 8, background: C.grey50, border: `1px solid ${C.grey100}` }}>
+                  <span style={{ fontSize: 10, color: C.grey500 }}>Rythme détecté </span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: C.success }}>{s.rhythm || s.frequencyLabel || rhythmLabel(rhythmData[0]?.median || 30)}</span>
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={150}>
@@ -760,23 +766,26 @@ export function WSSeriesConfig({
           {forecast?.forecast?.length > 0 && (
             <div
               className="glass-card"
-              style={{ padding: 18, marginBottom: 12, borderRadius: 18 }}
+              style={{ padding: 16, marginBottom: 12, borderRadius: 18 }}
             >
               <div
                 style={{
-                  fontSize: 14,
+                  fontSize: 11,
                   fontWeight: 800,
-                  color: C.grey700,
-                  marginBottom: 18,
+                  color: C.grey600,
+                  marginBottom: 4,
                 }}
               >
-                Prévision 12 mois · ±{s.tolerance_pct}% · ±{s.tolerance_days}j
+                Prévision 12 mois
+              </div>
+              <div style={{ fontSize: 10, color: C.grey500, marginBottom: 10 }}>
+                Tolérances appliquées · ±{s.tolerance_pct}% · ±{s.tolerance_days}j
               </div>
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(3,1fr)",
-                  gap: "30px 54px",
+                  gridTemplateColumns: "repeat(6,1fr)",
+                  gap: 6,
                 }}
               >
                 {forecast.forecast.map((f, i) => {
@@ -788,35 +797,41 @@ export function WSSeriesConfig({
                   return (
                     <div
                       key={`${f.date || "forecast"}-${i}`}
+                      style={{
+                        background: `${color}10`,
+                        borderRadius: 8,
+                        padding: "7px 8px",
+                        minWidth: 0,
+                      }}
                     >
                     <div
                       style={{
-                        fontSize: 14,
-                        color: C.info,
-                        fontWeight: 900,
-                        marginBottom: 7,
+                        fontSize: 9,
+                        color: C.grey500,
+                        fontWeight: 800,
+                        marginBottom: 4,
                       }}
                     >
                       #{i + 1}
                     </div>
-                    <div style={{ fontSize: 16, color: C.grey900, fontWeight: 900, fontFamily: "'JetBrains Mono',monospace" }}>
+                    <div style={{ fontSize: 10, color: C.grey700, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1.35 }}>
                       {expectedDate}
                     </div>
-                    <div style={{ fontSize: 12, color: C.grey400, marginTop: 5, fontFamily: "'JetBrains Mono',monospace" }}>
+                    <div style={{ fontSize: 9, color: C.grey400, marginTop: 3, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1.35 }}>
                       {addDays(expectedDate, -toleranceDays)} → {addDays(expectedDate, toleranceDays)}
                     </div>
                     <div
                       style={{
-                        fontSize: 17,
-                        color: C.warning,
-                        fontWeight: 900,
-                        marginTop: 12,
+                        fontSize: 11,
+                        color,
+                        fontWeight: 800,
+                        marginTop: 6,
                         fontFamily: "'JetBrains Mono',monospace",
                       }}
                     >
                       {fmtE(Math.round(predicted))}
                     </div>
-                    <div style={{ fontSize: 12, marginTop: 4, fontFamily: "'JetBrains Mono',monospace" }}>
+                    <div style={{ fontSize: 9, marginTop: 2, fontFamily: "'JetBrains Mono',monospace" }}>
                       <span style={{ color: C.success }}>
                         {fmtE(Math.round(lower))}
                       </span>{" "}
@@ -855,7 +870,7 @@ export function WSSeriesConfig({
               Sauvegarde…
             </>
           ) : (
-            "Sauvegarder la configuration"
+            confirmLabel
           )}
         </button>
       </div>
