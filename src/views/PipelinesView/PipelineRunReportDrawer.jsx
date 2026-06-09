@@ -41,7 +41,6 @@ function buildReport({ pipeline, tenantName, finalResult }) {
     const [supplier, label = "—"] = name.split(" — ");
     return { name: supplier, label, n: rows.length, mu, sigma, cv, tolerance: pipeline.tolerancePct || 15, flag: cv > 25 ? "high_cv" : null };
   });
-  const telecomMixed = series.filter(s => s.name === "TELECOM_FIBRE").length > 1;
   const startedAt = pipeline.lastRun || pipeline.lastRunAt || new Date().toISOString();
   const durationMs = Math.max(1800, 380 + cleanRows.length * 63 + anomalies.length * 900);
   const finishedAt = new Date(new Date(startedAt).getTime() + durationMs).toISOString();
@@ -77,10 +76,10 @@ function buildReport({ pipeline, tenantName, finalResult }) {
       { id: "eda", label: "Analyse EDA", icon: "trending", durationMs: 320, status: "ok", summary: `${groups.size} séries candidates · total ${fmtE(totalAmount)}`, details: [
         { k: "Séries candidates", v: String(groups.size) }, { k: "Montant total", v: fmtE(totalAmount) }, { k: "Montant moyen", v: fmtE(totalAmount / Math.max(1, cleanRows.length)) }, { k: "Anomalies source", v: String(anomalies.length) }
       ] },
-      { id: "clusters", label: "Détection Clusters", icon: "sparkles", durationMs: 780, status: "ok", summary: telecomMixed ? "TELECOM_FIBRE séparé par label pour éviter faux positifs" : "Groupement fournisseur retenu", details: [
-        { k: "Méthode", v: "Gap-split récursif + score de cohérence" }, { k: "Groupement testé", v: "supplier seul puis supplier + label" }, { k: "Choix moteur", v: telecomMixed ? "supplier + label pour TELECOM_FIBRE" : "supplier seul" }
+      { id: "clusters", label: "Détection Clusters", icon: "sparkles", durationMs: 780, status: "ok", summary: "Séries construites par fournisseur + label", details: [
+        { k: "Méthode", v: "Analyse du rythme et du montant par série" }, { k: "Groupement Factures", v: "supplier + label" }, { k: "Choix moteur", v: "Fixe sauf override groupBy explicite" }
       ], decisions: [
-        { supplier: "TELECOM_FIBRE", chosen: telecomMixed ? "supplier + label" : "supplier seul", rejected: telecomMixed ? "supplier seul" : null, reason: telecomMixed ? "Deux montants stables distincts détectés (fibre vs internet). Le groupement fin évite de signaler 50 EUR comme anomalie face aux factures 300 EUR." : "Aucun cluster secondaire significatif détecté.", clusters: series.filter(s => s.name === "TELECOM_FIBRE").map(s => `${s.label} · μ=${fmtE(s.mu)} · n=${s.n}`) },
+        { supplier: "TELECOM_FIBRE", chosen: "supplier + label", rejected: null, reason: "Le moteur ne compare plus fournisseur seul contre fournisseur + label: les factures sont toujours analysées au niveau fournisseur + label par défaut.", clusters: series.filter(s => s.name === "TELECOM_FIBRE").map(s => `${s.label} · μ=${fmtE(s.mu)} · n=${s.n}`) },
         { supplier: "FOURNITURES_BUREAU", chosen: "supplier + label", rejected: null, reason: "CV élevé conservé comme signal de vigilance, mais la série reste cohérente pour le suivi budget.", clusters: series.filter(s => s.name === "FOURNITURES_BUREAU").map(s => `${s.label} · μ=${fmtE(s.mu)} · CV=${s.cv.toFixed(1)}%`) },
       ] },
       { id: "series", label: "Construction Séries", icon: "layers", durationMs: 940, status: "ok", summary: `${series.length} séries créées`, details: [

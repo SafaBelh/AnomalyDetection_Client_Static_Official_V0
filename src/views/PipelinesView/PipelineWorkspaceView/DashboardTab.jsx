@@ -929,7 +929,7 @@ export function WSFullDashboard({
                           fontFamily: "monospace",
                         }}
                       >
-                        {Math.round(a.score || a.score * 100 || 0)}
+                        {Math.round((a.score || 0) <= 1 ? (a.score || 0) * 100 : a.score || 0)}
                       </div>
                     </div>
                     <div style={{ flex: 1 }}>
@@ -965,11 +965,13 @@ export function WSFullDashboard({
                               ? [seriesObj.supplier, seriesObj.label]
                                   .filter(Boolean)
                                   .join(" · ")
-                              : `Série #${a.series_id}`)}
+                              : a.supplier || `Série #${a.series_id || "—"}`)}
                         </span>
-                        <span style={{ fontSize: 10, color: C.grey400 }}>
-                          #{a.series_id}
-                        </span>
+                        {a.series_id && (
+                          <span style={{ fontSize: 10, color: C.grey400 }}>
+                            #{a.series_id}
+                          </span>
+                        )}
                         <span
                           style={{
                             fontSize: 10,
@@ -980,7 +982,7 @@ export function WSFullDashboard({
                           {a.detection_date}
                         </span>
                       </div>
-                      {a.actual_amount && (
+                      {(a.actual_amount || a.amount) && (
                         <div
                           style={{
                             fontSize: 12,
@@ -989,7 +991,7 @@ export function WSFullDashboard({
                             marginBottom: 2,
                           }}
                         >
-                          {fmtE(Math.round(a.actual_amount))}
+                          {fmtE(Math.round(a.actual_amount || a.amount))}
                           {a.date && (
                             <span
                               style={{
@@ -1010,7 +1012,7 @@ export function WSFullDashboard({
                           lineHeight: 1.4,
                         }}
                       >
-                        {a.explanation}
+                        {a.explanation || a.message}
                       </div>
                       {a.expected_date && (
                         <div

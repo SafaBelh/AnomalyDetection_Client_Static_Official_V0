@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Alert, FeedbackResponse, InvoiceCheckResult, SavedInvoice, Theme } from '../../types';
-import { useTheme, lightTheme } from '../../theme/ThemeProvider';
+import { lightTheme } from '../../theme/ThemeProvider';
 import { getAskGoSaasWidget, getAskGoSaasWidgets, subscribeToSaasWidgetUpdates, type AskGoWidgetSlot, type SaasWidget } from '../../saasWidgetStore';
 
 // ─── Ask&Go brand theme ───────────────────────────────────────────────────────
@@ -126,30 +126,6 @@ function buildWidgetThemeStyle(widget: SaasWidget): React.CSSProperties {
   } as React.CSSProperties;
 }
 
-function themeFromSaasWidget(widget?: SaasWidget): Theme {
-  const cfg = widget?.config ?? {};
-  return {
-    ...askGoTheme,
-    primaryColor: String(cfg.primaryColor ?? askGoTheme.primaryColor),
-    primaryDark: String(cfg.primaryDark ?? cfg.primaryColor ?? askGoTheme.primaryDark),
-    accentColor: String(cfg.accentColor ?? askGoTheme.accentColor),
-    background: String(cfg.background ?? askGoTheme.background),
-    surface: String(cfg.surface ?? askGoTheme.surface),
-    surfaceHover: String(cfg.surfaceHover ?? askGoTheme.surfaceHover),
-    textPrimary: String(cfg.textPrimary ?? askGoTheme.textPrimary),
-    textSecondary: String(cfg.textSecondary ?? askGoTheme.textSecondary),
-    textMuted: String(cfg.textMuted ?? askGoTheme.textMuted),
-    borderColor: String(cfg.borderColor ?? askGoTheme.borderColor),
-    borderRadius: String(cfg.borderRadius ?? askGoTheme.borderRadius),
-    danger: String(cfg.danger ?? askGoTheme.danger),
-    success: String(cfg.success ?? askGoTheme.success),
-    warning: String(cfg.warning ?? askGoTheme.warning),
-    info: String(cfg.info ?? askGoTheme.info),
-    fontFamily: String(cfg.fontFamily ?? askGoTheme.fontFamily),
-    fontFamilyMono: String(cfg.fontFamilyMono ?? askGoTheme.fontFamilyMono),
-  };
-}
-
 function buildThemeVars(theme: Theme): React.CSSProperties {
   return {
     '--anomaly-primary-color': theme.primaryColor,
@@ -170,15 +146,6 @@ function buildThemeVars(theme: Theme): React.CSSProperties {
     '--anomaly-font-family': theme.fontFamily,
     '--anomaly-font-mono': theme.fontFamilyMono,
   } as React.CSSProperties;
-}
-
-function useAskGoLiveTheme(fallbackTheme: Theme) {
-  const [, setVersion] = useState(0);
-
-  useEffect(() => subscribeToSaasWidgetUpdates(() => setVersion(version => version + 1)), []);
-
-  const sourceWidget = getAskGoSaasWidgets().find(widget => widget.status === 'active') ?? getAskGoSaasWidgets()[0];
-  return sourceWidget ? themeFromSaasWidget(sourceWidget) : fallbackTheme;
 }
 
 function SaasWidgetsPanel() {
@@ -209,8 +176,7 @@ interface Props { token: string; }
 type View = 'dashboard' | 'invoice' | 'alerts' | 'budget' | 'settings';
 
 export function AskGoApp({ token }: Props) {
-  const { theme: providerTheme } = useTheme();
-  const theme = useAskGoLiveTheme(providerTheme);
+  const theme = askGoTheme;
   const [currentView, setCurrentView] = useState<View>('dashboard');
 
   // Invoice state

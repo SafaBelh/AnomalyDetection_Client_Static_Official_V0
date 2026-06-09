@@ -452,26 +452,25 @@ export const PIPELINE_DEFS = {
   facture: {
     label: "Factures", color: "#D94F3D", Icon: Database,
     fixedFields: [
-      { key: "invoiceId", label: "ID Facture / Invoice ID", required: true },
-      { key: "supplierName", label: "Fournisseur / Supplier", required: true },
       { key: "invoiceDate", label: "Date Facture / Invoice Date", required: true },
       { key: "amount", label: "Montant / Amount", required: true },
       { key: "status", label: "Statut / Status", required: true },
-      { key: "label", label: "Label / Catégorie", required: true },
+      { key: "supplierName", label: "Groupe: Fournisseur / Supplier", required: true },
+      { key: "label", label: "Groupe: Label / Catégorie", required: true },
     ],
-    allowExtraFields: false, hasGroupBy: true
+    defaultGroupByCols: ["supplierName", "label"],
+    allowExtraFields: true, hasGroupBy: true
   },
   commande: {
     label: "Commandes", color: "#3b82f6", Icon: Layers,
     fixedFields: [
-      { key: "commandeRef", label: "Référence commande", required: true },
       { key: "commandeDate", label: "Date commande", required: true },
       { key: "amount", label: "Montant", required: true },
-      { key: "supplierName", label: "Fournisseur", required: true },
       { key: "status", label: "Statut", required: true },
-      { key: "budgetCode", label: "Ligne budgétaire (optionnel)", required: false },
-      { key: "category", label: "Catégorie (optionnel)", required: false },
+      { key: "budgetCode", label: "Groupe: Ligne budgétaire", required: false },
+      { key: "category", label: "Groupe: Catégorie", required: false },
     ],
+    defaultGroupByCols: ["budgetCode"],
     allowExtraFields: true, hasGroupBy: true
   },
 };
@@ -651,7 +650,7 @@ export const DEMO_CONNECTORS = [
           category: "commandes.category",
           status: "commandes.status",
         },
-        groupByCols: ["supplierName"],
+        groupByCols: ["budgetCode"],
         tolerancePct: 0.10,
         toleranceDays: 30,
       },
@@ -925,7 +924,17 @@ export const JSON_IMPORT_TEMPLATE = {
     commandes: { enabled: true, sourceTables: ["COMMANDES"], groupBy: [] },
   },
   budget: {},
-  tenants: ["CLIENT_001", "CLIENT_002"],
+  tenants: [
+    { id: "CLIENT_001", label: "Client Alpha", storageMode: "shared" },
+    { id: "CLIENT_002", label: "Client Beta", storageMode: "isolated", database: { jdbcUrl: "jdbc:postgresql://host:5432/client_beta", jdbcUsername: "erp_user", jdbcPassword: "" } },
+  ],
+};
+
+export const TENANT_JSON_IMPORT_TEMPLATE = {
+  tenants: [
+    { id: "CLIENT_001", label: "Client Alpha", storageMode: "shared" },
+    { id: "CLIENT_002", label: "Client Beta", storageMode: "isolated", database: { jdbcUrl: "jdbc:postgresql://host:5432/client_beta", jdbcUsername: "erp_user", jdbcPassword: "" } },
+  ],
 };
 
 export const DERIVED_ANOMALY_DEFAULTS = {
@@ -997,7 +1006,7 @@ export const TENANT_CONNECTIONS_TABLE = [{
 
 export const PIPELINES_TABLE = [
   { id: "mock-pipe-1", tenantId: _whitecapeUser.id, name: "whitecape_ask - facture", sourceType: "JDBC", status: "ACTIVE", active: true, templateKey: "facture", isCustom: false, connectorId: "mock-conn-1", externalId: "whitecape_ask", lastRunAt: "2026-05-31T11:00:00Z", lastRunStats: { processedCount: 20, importedCount: 20, anomalyCount: 3 }, configJson: JSON.stringify({ query: "SELECT ..." }) },
-  { id: "mock-pipe-2", tenantId: _whitecapeUser.id, name: "whitecape_ask - commande", sourceType: "JDBC", status: "ACTIVE", active: true, templateKey: "commande", isCustom: false, connectorId: "mock-conn-1", externalId: "whitecape_ask", lastRunAt: "2026-05-31T11:05:00Z", lastRunStats: { processedCount: 20, importedCount: 20, anomalyCount: 0 }, configJson: JSON.stringify({ query: "SELECT ...", groupByCols: ["supplierName"], fieldMappings: CONNECTOR_CONFIG.step7_templates.commande.fieldMappings }) },
+  { id: "mock-pipe-2", tenantId: _whitecapeUser.id, name: "whitecape_ask - commande", sourceType: "JDBC", status: "ACTIVE", active: true, templateKey: "commande", isCustom: false, connectorId: "mock-conn-1", externalId: "whitecape_ask", lastRunAt: "2026-05-31T11:05:00Z", lastRunStats: { processedCount: 20, importedCount: 20, anomalyCount: 0 }, configJson: JSON.stringify({ query: "SELECT ...", groupByCols: ["budgetCode"], fieldMappings: CONNECTOR_CONFIG.step7_templates.commande.fieldMappings }) },
 ];
 
 export const ALERTS_TABLE = [
@@ -1024,7 +1033,7 @@ export const CSV_DEMO_ROWS = INVOICES_TABLE.slice(0, 18).map((inv) => ({
 }));
 
 export const PIPELINE_LOGS_TABLE = [
-  { id: "mock-log-1", category: "SERIES_DECISION", supplier: "TELECOM_FIBRE", status: "SUCCESS", reason: "autoSelectBestGrouping a choisi fournisseur+label pour TELECOM_FIBRE. Detection de 2 clusters (50 € et 300 €). Score : 41.9 vs. 81.3.", createdAt: "2024-06-01T11:00:00Z" }
+  { id: "mock-log-1", category: "SERIES_DECISION", supplier: "TELECOM_FIBRE", status: "SUCCESS", reason: "Groupement facture fixe: fournisseur + label. TELECOM_FIBRE produit 2 series stables (50 EUR et 300 EUR).", createdAt: "2024-06-01T11:00:00Z" }
 ];
 
 export const ANOMALIES_TABLE = [];
@@ -1173,7 +1182,7 @@ export function buildWizardDataFromAnswers(a, schemaForConn) {
     enabled: a.pipelines?.factures?.enabled !== false,
     tables: a.pipelines?.factures?.sourceTables || [],
     fieldMappings: a.pipelines?.factures?.fieldMappings || {},
-    conditions: [], joins: [], groupByCols: [],
+    conditions: [], joins: [], groupByCols: a.pipelines?.factures?.groupBy || PIPELINE_DEFS.facture.defaultGroupByCols,
   };
   const commandePl = {
     enabled: a.pipelines?.commandes?.enabled !== false,

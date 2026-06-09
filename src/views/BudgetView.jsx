@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { INVOICES_TABLE, COMMANDES_FRONTEND_TABLE, COMMAND_BUDGET_SERIES_TABLE, HISTORICAL_INVOICES_TABLE, MONTH_NAMES_FR, BUDGET_TABS } from "@/store/staticData";
 import { useAuth, visibleTenants } from "@/store/db";
 import { BarChart3, Brain, Flag, Lightbulb, Search, TriangleAlert, Waves, Globe, TrendingUp, TrendingDown, AlertTriangle, Building2, ChevronRight } from "lucide-react";
@@ -1821,9 +1821,14 @@ export function BudgetView() {
   const [selectedSeries, setSelectedSeries] = useState(null);
   const [seriesBudgetInput, setSeriesBudgetInput] = useState("");
   const [flaggedSuppliers, setFlaggedSuppliers] = useState(new Set());
-  const [adminTenantId, setAdminTenantId] = useState("");
+  const [adminTenantId, setAdminTenantId] = useState(() => isEngineAdmin ? tenant?.id || "" : "");
 
   const adminTenants = useMemo(() => isEngineAdmin ? visibleTenants() : [], [isEngineAdmin]);
+
+  useEffect(() => {
+    if (!isEngineAdmin) return;
+    setAdminTenantId(tenant?.id || "");
+  }, [isEngineAdmin, tenant?.id]);
 
   // When admin selects a tenant (from dropdown OR by clicking in GlobalAdminDashboard)
   const handleSelectTenant = useCallback((tenantId) => {

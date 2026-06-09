@@ -72,6 +72,7 @@ export function WSMappingStep({ uploadData, onConfirm, onNavigate, manageMode = 
             entity: cols.tenant ? r[cols.tenant] : "CORP01",
             status: cols.status ? r[cols.status] : "VALID",
             doc_ref: r[cols.docref] || "",
+            ...Object.fromEntries(extraCols.map((col) => [col, r[col] ?? ""])),
           }))
           .filter((r) => r.amount > 0 && r.invoice_date && r.supplier_code);
         wsStore.series = [];
@@ -90,6 +91,7 @@ export function WSMappingStep({ uploadData, onConfirm, onNavigate, manageMode = 
             entity: cols.tenant ? r[cols.tenant] : "CORP01",
             status: cols.status ? r[cols.status] : "VALID",
             doc_ref: r[cols.docref] || "",
+            ...Object.fromEntries(extraCols.map((col) => [col, r[col] ?? ""])),
           }))
           .filter((r) => r.amount > 0 && r.invoice_date && r.supplier_code);
         wsStore.series = [];

@@ -86,6 +86,24 @@ export function WSSeriesBuilder({
     cols.tenant ? { key: "tenant", label: "Entité (tenant)" } : null,
   ].filter(Boolean);
   const extraCandidates = [...new Set(extraCols)];
+  const scenarioOptions = [
+    { label: "Facture standard", fields: ["supplier", cols.label ? "label" : null].filter(Boolean) },
+    ...extraCandidates.map((field) => ({ label: `+ ${field}`, fields: ["supplier", cols.label ? "label" : null, field].filter(Boolean) })),
+    extraCandidates.length > 1 ? { label: "Extras seuls", fields: extraCandidates } : null,
+  ].filter(Boolean);
+  const applyScenario = (fields) => {
+    setSelected(fields);
+    if (fields.length === 0) {
+      setPreview(null);
+      return;
+    }
+    setLoading(true);
+    setErr(null);
+    setPreview(null);
+    previewSeries(fields)
+      .then((r) => setPreview(r))
+      .finally(() => setLoading(false));
+  };
   const toggle = (f) => {
     const next = selected.includes(f)
       ? selected.filter((x) => x !== f)
@@ -175,6 +193,24 @@ export function WSSeriesBuilder({
         <div style={{ fontSize: 11, color: C.grey500, marginBottom: 6 }}>
           Champs standards
         </div>
+        {scenarioOptions.length > 1 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+            {scenarioOptions.map((scenario) => {
+              const active = scenario.fields.length === selected.length && scenario.fields.every((f) => selected.includes(f));
+              return (
+                <button
+                  key={scenario.label}
+                  type="button"
+                  onClick={() => applyScenario(scenario.fields)}
+                  className={`btn-toggle${active ? " active" : ""}`}
+                  style={{ fontSize: 11 }}
+                >
+                  {scenario.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div
           style={{
             display: "flex",

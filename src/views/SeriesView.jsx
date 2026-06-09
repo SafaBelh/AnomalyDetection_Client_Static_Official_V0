@@ -601,6 +601,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { C } from "@/constants/colors";
 import { useToast } from "@/contexts/ToastContext";
 import { pipelinesForTenant, useAuth, useStore, visibleTenants } from "@/store/db";
+import { COMMANDES_TABLE, COMMAND_BUDGET_SERIES_TABLE } from "@/store/staticData";
 import { wsAPI, wsStore } from "@/store/wsAPI";
 import { CalendarDays, ChevronDown, ChevronRight, Clock, X, TrendingUp, AlertTriangle, Activity } from "lucide-react";
 
@@ -617,6 +618,92 @@ function rhythmLabel(days) {
   if (days >= 25) return "Mensuel";
   if (days >= 12) return "Bimensuel";
   return "Hebdomadaire";
+}
+
+function safeParseJson(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try { return JSON.parse(value); } catch { return {}; }
+}
+
+function isCommandePipeline(pipeline) {
+  const key = String(pipeline?.templateKey || pipeline?.pipelineType || "").toLowerCase();
+  const name = String(pipeline?.name || "").toLowerCase();
+  return key === "commande" || name.includes("commande");
+}
+
+function commandeBudgetCode(series) {
+  return series?.budgetCode || String(series?.name || series?.id || "").match(/BUDGET_[A-Z0-9_]+/)?.[0] || "";
+}
+
+function buildCommandeMonthlyStats(budgetCode) {
+  const budgetRows = COMMANDES_TABLE.filter(cmd => cmd.ligne_budgetaire === budgetCode);
+  const historicalYears = [...new Set(budgetRows
+    .map(cmd => cmd.date_cmd?.slice(0, 4))
+    .filter(year => year === "2024" || year === "2025"))];
+  const monthNames = ["Jan", "Fév", "Mar", "Avr", "Mai", "Jun", "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"];
+
+  return Array.from({ length: 12 }, (_, idx) => {
+    const month = String(idx + 1).padStart(2, "0");
+    const historical = budgetRows.filter(cmd => /^(2024|2025)-/.test(cmd.date_cmd || "") && cmd.date_cmd?.slice(5, 7) === month);
+    const current = budgetRows.filter(cmd => cmd.date_cmd?.startsWith(`2026-${month}`));
+    const divisor = Math.max(1, historicalYears.length);
+    const histCount = historical.length / divisor;
+    const histAmount = historical.reduce((sum, cmd) => sum + (Number(cmd.amount) || 0), 0) / divisor;
+    const currentCount = current.length;
+    const currentAmount = current.reduce((sum, cmd) => sum + (Number(cmd.amount) || 0), 0);
+
+    return {
+      month: monthNames[idx],
+      histCount,
+      currentCount,
+      histAmount,
+      currentAmount,
+      countRatio: histCount ? currentCount / histCount : 0,
+      amountRatio: histAmount ? currentAmount / histAmount : 0,
+      countAlert: histCount > 0 && currentCount >= Math.max(histCount * 3, histCount + 5),
+      amountAlert: histAmount > 0 && currentAmount >= histAmount * 1.75,
+    };
+  });
+}
+
+function buildCommandeSeries(pipeline) {
+  const config = safeParseJson(pipeline?.configJson);
+  const groupByCols = Array.isArray(config.groupByCols) && config.groupByCols.length
+    ? config.groupByCols
+    : ["budgetCode"];
+
+  if (!groupByCols.includes("budgetCode")) return [];
+
+  return COMMAND_BUDGET_SERIES_TABLE.map((row) => {
+    const monthlyStats = buildCommandeMonthlyStats(row.budgetCode);
+    const avgOrder = row.orderCount ? row.totalCommandes / row.orderCount : 0;
+    const budgetRatio = row.budgetAlloue ? row.projection / row.budgetAlloue : 0;
+    return {
+      id: `${pipeline?.id || "commande"}-${row.budgetCode}`,
+      name: `${row.budgetCode} · ${row.label}`,
+      isCommandSeries: true,
+      budgetCode: row.budgetCode,
+      budgetLabel: row.label,
+      n: row.orderCount,
+      mu: avgOrder,
+      sigma: 0,
+      cv: Math.max(0, budgetRatio - 1),
+      totalCommandes: row.totalCommandes,
+      budgetAlloue: row.budgetAlloue,
+      projection: row.projection,
+      overrunAmount: row.overrunAmount,
+      status: row.status,
+      severity: row.severity,
+      monthlyMuMap: row.monthlyProfile.reduce((acc, amount, idx) => ({ ...acc, [String(idx + 1)]: amount }), {}),
+      monthlyStats,
+      flagged: row.status !== "ON_TRACK",
+      high_cv: row.status !== "ON_TRACK",
+      low_volume: false,
+      tolerance_pct: pipeline?.tolerancePct ?? 15,
+      tolerance_days: pipeline?.toleranceDays ?? 45,
+    };
+  });
 }
 
 /* ─── Design tokens (kept in sync with C.* palette) ────────────────── */
@@ -714,6 +801,7 @@ function SeriesCard({ series, pipeline }) {
   const n = series.n ?? 0;
   const sigma = series.sigma ?? 0;
   const tolerancePct = series.tolerance_pct ?? pipeline?.tolerancePct ?? 10;
+  const isCommand = series.isCommandSeries || isCommandePipeline(pipeline);
 
   const statusColor = paused ? T.ink400 : flagged ? T.red : T.success;
 
@@ -754,11 +842,11 @@ function SeriesCard({ series, pipeline }) {
         {/* Metrics row */}
         <div style={{ display: "flex", gap: 0, alignItems: "center" }}>
           {[
-            { label: "factures", val: n, raw: true },
-            { label: "moy", val: `€${mu.toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`, mono: true },
-            { label: "σ", val: `€${sigma.toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`, mono: true },
-            { label: "CV", val: `${(cv * 100).toFixed(1)}%`, mono: true, color: cv > 0.25 ? T.red : undefined },
-            { label: "tol", val: `${tolerancePct}%`, mono: true },
+            { label: isCommand ? "commandes" : "factures", val: n, raw: true },
+            { label: isCommand ? "total" : "moy", val: `€${(isCommand ? series.totalCommandes ?? 0 : mu).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`, mono: true },
+            { label: isCommand ? "budget" : "σ", val: `€${(isCommand ? series.budgetAlloue ?? 0 : sigma).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`, mono: true },
+            { label: isCommand ? "projection" : "CV", val: isCommand ? `€${(series.projection ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}` : `${(cv * 100).toFixed(1)}%`, mono: true, color: flagged ? T.red : undefined },
+            { label: isCommand ? "statut" : "tol", val: isCommand ? (series.status === "ON_TRACK" ? "OK" : "Alerte") : `${tolerancePct}%`, mono: true, color: flagged ? T.red : undefined },
           ].map((m, i) => (
             <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 3, marginRight: 14 }}>
               <span style={{ fontFamily: m.mono ? T.mono : undefined, fontSize: 11, fontWeight: 700, color: m.color || T.ink700 }}>
@@ -806,6 +894,7 @@ function SeriesDetailModal({ series, pipeline, onClose }) {
   const sigma = series.sigma || 0;
   const cv = series.cv || 0;
   const n = series.n || 0;
+  const isCommand = series.isCommandSeries || isCommandePipeline(pipeline);
   const tolerancePct = series.tolerance_pct ?? pipeline?.tolerancePct ?? 10;
   const toleranceDays = series.tolerance_days ?? pipeline?.toleranceDays ?? 10;
   const minBound = mu * (1 - tolerancePct / 100);
@@ -861,6 +950,114 @@ function SeriesDetailModal({ series, pipeline, onClose }) {
     const baseDay = series.expected_day || series.expectedInvoiceDay || series.dayOfMonth || 15;
     return Array.from({ length: 12 }, () => Math.min(28, Math.max(1, Number(baseDay) || 15)));
   }, [series]);
+
+  const commandMonthlyData = useMemo(() => {
+    if (Array.isArray(series.monthlyStats) && series.monthlyStats.length > 0) return series.monthlyStats;
+    return buildCommandeMonthlyStats(commandeBudgetCode(series));
+  }, [series]);
+  const commandAlerts = useMemo(() => commandMonthlyData.filter(m => m.countAlert || m.amountAlert), [commandMonthlyData]);
+
+  if (isCommand) {
+    const drawer = (
+      <div
+        style={{
+          position: "fixed", inset: 0, zIndex: 10000,
+          background: "rgba(10,10,10,.35)",
+          backdropFilter: "blur(6px) saturate(0.8)",
+          display: "flex", justifyContent: "flex-end",
+        }}
+        onClick={onClose}
+      >
+        <div
+          style={{
+            width: "min(780px, calc(100vw - 16px))",
+            height: "100vh",
+            background: T.bg,
+            boxShadow: "-24px 0 60px rgba(0,0,0,.16)",
+            display: "flex", flexDirection: "column",
+            borderLeft: `1px solid ${T.border}`,
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 24px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: commandAlerts.length ? T.red : T.success, boxShadow: `0 0 0 3px ${(commandAlerts.length ? T.red : T.success)}22` }} />
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: T.ink900, letterSpacing: "-0.02em" }}>{series.name || series.id}</div>
+                <div style={{ fontSize: 11, color: T.ink400, marginTop: 2, display: "flex", gap: 6, alignItems: "center" }}>
+                  <span style={{ fontWeight: 600 }}>{pipeline?.name}</span>
+                  <span style={{ color: T.ink300 }}>·</span>
+                  <span>Analyse commandes par ligne budgétaire</span>
+                </div>
+              </div>
+            </div>
+            <button onClick={onClose} aria-label="Fermer" style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <X size={14} color={T.ink500} />
+            </button>
+          </div>
+
+          <div style={{ padding: "20px 24px 40px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <StatPill label="Commandes YTD" value={n} color={T.ink700} />
+              <StatPill label="Montant YTD" value={`€${(series.totalCommandes ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`} color={T.info} />
+              <StatPill label="Projection" value={`€${(series.projection ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`} color={T.warning} />
+              <StatPill label="Budget" value={`€${(series.budgetAlloue ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`} color={T.ink700} />
+              <StatPill label="Alertes" value={commandAlerts.length} color={commandAlerts.length ? T.red : T.success} />
+            </div>
+
+            <div style={{ background: T.surface, borderRadius: 14, border: `1px solid ${T.border}`, padding: "16px 18px" }}>
+              <SectionTitle icon={<Activity size={13} />}>Comportement mensuel des commandes</SectionTitle>
+              <div style={{ width: "100%", height: 230 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={commandMonthlyData} margin={{ top: 5, right: 10, bottom: 0, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F0EEE8" />
+                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: T.ink400 }} />
+                    <YAxis tick={{ fontSize: 10, fill: T.ink400 }} allowDecimals={false} />
+                    <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 11, fontFamily: T.mono }} />
+                    <Bar dataKey="histCount" name="Cmd hist. moyenne" fill={T.ink300} radius={[4, 4, 0, 0]} minPointSize={3} />
+                    <Bar dataKey="currentCount" name="Cmd 2026" fill={T.info} radius={[4, 4, 0, 0]} minPointSize={3} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div style={{ background: T.surface, borderRadius: 14, border: `1px solid ${T.border}`, padding: "16px 18px" }}>
+              <SectionTitle icon={<TrendingUp size={13} />}>Montants mensuels</SectionTitle>
+              <div style={{ width: "100%", height: 230 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={commandMonthlyData} margin={{ top: 5, right: 10, bottom: 0, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F0EEE8" />
+                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: T.ink400 }} />
+                    <YAxis tick={{ fontSize: 10, fill: T.ink400 }} tickFormatter={v => `€${v.toLocaleString("fr-FR")}`} />
+                    <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 11, fontFamily: T.mono }} formatter={v => [`€${Number(v).toFixed(2)}`, "Montant"]} />
+                    <Bar dataKey="histAmount" name="Montant hist. moyen" fill={T.ink300} radius={[4, 4, 0, 0]} minPointSize={3} />
+                    <Bar dataKey="currentAmount" name="Montant 2026" fill={T.warning} radius={[4, 4, 0, 0]} minPointSize={3} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div style={{ background: T.surface, borderRadius: 14, border: `1px solid ${T.border}`, padding: "16px 18px" }}>
+              <SectionTitle icon={<AlertTriangle size={13} />}>Règles d'alerte</SectionTitle>
+              {commandAlerts.length === 0 ? (
+                <div style={{ fontSize: 12, color: T.ink500, padding: "12px 0" }}>Aucun mois ne dépasse les seuils de volume ou de montant pour cette série.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {commandAlerts.map(m => (
+                    <div key={m.month} style={{ border: `1px solid ${T.red}22`, background: `${T.red}08`, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: T.ink700 }}>
+                      <strong style={{ color: T.red }}>{m.month}</strong> · {m.countAlert ? `volume x${m.countRatio.toFixed(1)} ` : ""}{m.amountAlert ? `montant x${m.amountRatio.toFixed(1)}` : ""}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+
+    return createPortal(drawer, document.body);
+  }
 
   const drawer = (
     <div
@@ -932,13 +1129,13 @@ function SeriesDetailModal({ series, pipeline, onClose }) {
 
           {/* KPI strip */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <StatPill label="Factures" value={n} color={T.ink700} />
-            <StatPill label="Moyenne μ" value={`€${mu.toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`} color={T.info} />
-            <StatPill label="Écart-type σ" value={`€${sigma.toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`} color={T.ink700} />
-            <StatPill label="CV" value={`${(cv * 100).toFixed(1)}%`} color={cv > 0.25 ? T.red : T.ink700} />
-            <StatPill label="Tolérance" value={`${tolerancePct}%`} color={T.warning} />
-            <StatPill label="Seuil min" value={`€${Math.round(minBound).toLocaleString("fr-FR")}`} color={T.success} />
-            <StatPill label="Seuil max" value={`€${Math.round(maxBound).toLocaleString("fr-FR")}`} color={T.red} />
+            <StatPill label={isCommand ? "Commandes" : "Factures"} value={n} color={T.ink700} />
+            <StatPill label={isCommand ? "Total YTD" : "Moyenne μ"} value={`€${(isCommand ? series.totalCommandes ?? 0 : mu).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`} color={T.info} />
+            <StatPill label={isCommand ? "Budget" : "Écart-type σ"} value={`€${(isCommand ? series.budgetAlloue ?? 0 : sigma).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`} color={T.ink700} />
+            <StatPill label={isCommand ? "Projection" : "CV"} value={isCommand ? `€${(series.projection ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}` : `${(cv * 100).toFixed(1)}%`} color={cv > 0.25 ? T.red : T.ink700} />
+            <StatPill label={isCommand ? "Dépassement" : "Tolérance"} value={isCommand ? `€${(series.overrunAmount ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}` : `${tolerancePct}%`} color={isCommand && series.overrunAmount > 0 ? T.red : T.warning} />
+            {!isCommand && <StatPill label="Seuil min" value={`€${Math.round(minBound).toLocaleString("fr-FR")}`} color={T.success} />}
+            {!isCommand && <StatPill label="Seuil max" value={`€${Math.round(maxBound).toLocaleString("fr-FR")}`} color={T.red} />}
           </div>
 
           {/* Config card */}
@@ -960,7 +1157,9 @@ function SeriesDetailModal({ series, pipeline, onClose }) {
                   {series.name || series.id}
                 </div>
                 <div style={{ fontSize: 10.5, color: T.ink400, marginTop: 2, fontFamily: T.mono }}>
-                  {n} fact. · μ €{mu.toLocaleString("fr-FR", { minimumFractionDigits: 0 })} · CV {(cv * 100).toFixed(1)}%
+                  {isCommand
+                    ? `${n} cmd. · total €${(series.totalCommandes ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} · projection €${(series.projection ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}`
+                    : `${n} fact. · μ €${mu.toLocaleString("fr-FR", { minimumFractionDigits: 0 })} · CV ${(cv * 100).toFixed(1)}%`}
                 </div>
               </div>
               <span style={{
@@ -1254,6 +1453,7 @@ export function SeriesView() {
       const map = {};
       await Promise.all(pipelines.map(async p => {
         if (!p.workspaceStarted) { map[p.id] = []; return; }
+        if (isCommandePipeline(p)) { map[p.id] = buildCommandeSeries(p); return; }
         try {
           wsStore.activePipelineId = p.id;
           const data = await wsAPI.listSeries();
@@ -1287,7 +1487,7 @@ export function SeriesView() {
     >
       <PageHeader
         eyebrow="Monitoring"
-        title="Séries de facturation"
+        title="Séries opérationnelles"
         subtitle={`${totalSeries} série${totalSeries !== 1 ? "s" : ""} · ${pipelines.length} pipeline${pipelines.length !== 1 ? "s" : ""}`}
         actions={!tenant && isEngineAdmin && allTenants.length > 0 && (
           <select

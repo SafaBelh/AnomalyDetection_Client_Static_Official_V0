@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Maximize2, RotateCcw, ScrollText, X } from "lucide-react";
 import { C } from "@/constants/colors";
 import { getPipeline, db, emit, invoicesForTenant, updatePipelineStore } from "@/store/db";
+import { COMMANDES_TABLE } from "@/store/staticData";
 import { wsAPI, wsStore } from "@/store/wsAPI";
 import { WSFullDashboard } from "@/views/PipelinesView/PipelineWorkspaceView/DashboardTab";
 import { WSMappingStep } from "./MappingStep";
@@ -252,7 +253,48 @@ function readConfig(pipeline) {
   return raw && typeof raw === "object" ? raw : {};
 }
 
-function invoiceRowsForPipeline(pipeline) {
+function isCommandePipeline(pipeline, config = {}) {
+  const key = String(pipeline?.templateKey || config?.template || "").toLowerCase();
+  const name = String(pipeline?.name || "").toLowerCase();
+  return key === "commande" || key === "commandes" || name.includes("commande");
+}
+
+function normalizeGroupField(field) {
+  if (!field) return "";
+  const short = String(field).includes(".") ? String(field).split(".").at(-1) : String(field);
+  if (["supplier", "supplier_code", "supplierName", "vendor", "vendor_code"].includes(short)) return "supplier";
+  if (["label", "category", "categoryName"].includes(short)) return "label";
+  if (["budgetCode", "ligne_budgetaire", "budget_code"].includes(short)) return "budgetCode";
+  if (["commandeDate", "date_cmd", "date"].includes(short)) return "date";
+  return short;
+}
+
+function groupFieldsFromConfig(config, fallback = ["supplier_code", "label"]) {
+  const configuredGroupBy = Array.isArray(config?.groupByCols) && config.groupByCols.length > 0
+    ? config.groupByCols
+    : Array.isArray(config?.groupBy) && config.groupBy.length > 0
+      ? config.groupBy
+      : fallback;
+  return configuredGroupBy.map(normalizeGroupField).filter(Boolean);
+}
+
+function invoiceRowsForPipeline(pipeline, config = readConfig(pipeline)) {
+  if (isCommandePipeline(pipeline, config)) {
+    return COMMANDES_TABLE.map((cmd, i) => ({
+      invoice_ref: cmd.commande_id || `CMD-${i + 1}`,
+      commande_ref: cmd.commande_id || `CMD-${i + 1}`,
+      invoice_date: cmd.date_cmd || "",
+      date: cmd.date_cmd || "",
+      amount: Number(cmd.amount || 0),
+      supplier_code: cmd.supplier_code || "N/A",
+      supplier: cmd.supplier_code || "N/A",
+      budgetCode: cmd.ligne_budgetaire || "",
+      ligne_budgetaire: cmd.ligne_budgetaire || "",
+      label: cmd.ligne_budgetaire || "",
+      status: cmd.status || "LIVRE",
+      sourceKind: "commande",
+    }));
+  }
   const rows = Array.isArray(wsStore.invoices) && wsStore.invoices.length > 0
     ? wsStore.invoices
     : invoicesForTenant(pipeline.tenantId, 160);
@@ -269,18 +311,28 @@ function invoiceRowsForPipeline(pipeline) {
 }
 
 function buildLocalSeries(invoices, config) {
+  const groupFields = groupFieldsFromConfig(config);
+  const isCommande = invoices.some((inv) => inv.sourceKind === "commande");
   const groups = new Map();
   invoices.forEach((inv) => {
     const supplier = inv.supplier || inv.supplier_code || "N/A";
     const label = inv.label || "";
-    const key = `${supplier}::${label}`;
-    if (!groups.has(key)) groups.set(key, { supplier, label, values: [] });
-    groups.get(key).values.push(Number(inv.amount || 0));
+    const parts = groupFields.map((field) => {
+      if (field === "supplier") return supplier;
+      if (field === "label") return label;
+      return inv[field] || "";
+    });
+    const key = parts.join("::");
+    if (!groups.has(key)) groups.set(key, { supplier: parts[0] || supplier, label: parts.slice(1).filter(Boolean).join(" · ") || label, values: [] });
+    groups.get(key).values.push({ amount: Number(inv.amount || 0), date: inv.date || inv.invoice_date || "" });
   });
   return Array.from(groups.values()).map((g, i) => {
-    const n = g.values.length;
-    const mu = n ? g.values.reduce((a, b) => a + b, 0) / n : 0;
-    const variance = n ? g.values.reduce((a, b) => a + Math.pow(b - mu, 2), 0) / n : 0;
+    const rows = g.values;
+    const currentRows = isCommande ? rows.filter((r) => String(r.date).startsWith("2026-")) : rows;
+    const values = currentRows.map((r) => r.amount);
+    const n = values.length;
+    const mu = n ? values.reduce((a, b) => a + b, 0) / n : 0;
+    const variance = n ? values.reduce((a, b) => a + Math.pow(b - mu, 2), 0) / n : 0;
     const sigma = Math.sqrt(variance);
     const cv = mu ? sigma / mu : 0;
     return {
@@ -298,14 +350,64 @@ function buildLocalSeries(invoices, config) {
       tolerance_pct: config?.detection?.tolerancePct ?? 10,
       tolerance_days: config?.detection?.toleranceDays ?? 10,
       active: true,
+      kind: isCommande ? "commande" : "facture",
+      orderCount: n,
+      totalAmount: values.reduce((a, b) => a + b, 0),
     };
   }).sort((a, b) => b.n - a.n);
 }
 
-function buildLocalDashboardData(invoices, series) {
+function buildCommandePatternAlerts(invoices, series, config = {}) {
+  const groupFields = groupFieldsFromConfig(config, ["budgetCode"]);
+  const maxCurrentMonth = Math.max(...invoices.filter((inv) => String(inv.date).startsWith("2026-")).map((inv) => Number(String(inv.date).slice(5, 7)) || 0), 5);
+  const groups = new Map();
+  invoices.forEach((inv) => {
+    const supplier = inv.supplier || inv.supplier_code || "N/A";
+    const parts = groupFields.map((field) => {
+      if (field === "supplier") return supplier;
+      if (field === "label") return inv.label || "";
+      return inv[field] || "";
+    });
+    const key = parts.join("::");
+    if (!groups.has(key)) groups.set(key, { key, label: parts.filter(Boolean).join(" · ") || supplier, rows: [] });
+    groups.get(key).rows.push(inv);
+  });
+  return Array.from(groups.values()).flatMap((group, i) => {
+    const current = group.rows.filter((r) => String(r.date).startsWith("2026-") && Number(String(r.date).slice(5, 7)) <= maxCurrentMonth);
+    const historicalYears = [2024, 2025].map((year) => group.rows.filter((r) => String(r.date).startsWith(`${year}-`) && Number(String(r.date).slice(5, 7)) <= maxCurrentMonth));
+    const avgHistCount = historicalYears.reduce((sum, rows) => sum + rows.length, 0) / Math.max(1, historicalYears.length);
+    const avgHistAmount = historicalYears.reduce((sum, rows) => sum + rows.reduce((s, r) => s + Number(r.amount || 0), 0), 0) / Math.max(1, historicalYears.length);
+    const currentAmount = current.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const countRatio = avgHistCount ? current.length / avgHistCount : 0;
+    const amountRatio = avgHistAmount ? currentAmount / avgHistAmount : 0;
+    const alerts = [];
+    if (avgHistCount > 0 && countRatio >= 1.5) {
+      alerts.push({ type: "ORDER_VOLUME_SPIKE", ratio: countRatio, message: `${group.label}: ${current.length} commandes vs ${avgHistCount.toFixed(1)} habituel` });
+    }
+    if (avgHistAmount > 0 && amountRatio >= 1.25) {
+      alerts.push({ type: "ORDER_AMOUNT_SPIKE", ratio: amountRatio, message: `${group.label}: montant commandes ${Math.round(currentAmount).toLocaleString("fr-FR")} EUR vs ${Math.round(avgHistAmount).toLocaleString("fr-FR")} EUR habituel` });
+    }
+    return alerts.map((alert, idx) => ({
+      id: `local-cmd-alert-${i + 1}-${idx + 1}`,
+      invoice_id: group.key,
+      series_id: series.find((s) => s.name === group.label || `${s.supplier}${s.label ? ` · ${s.label}` : ""}` === group.label)?.id,
+      supplier: group.label,
+      amount: currentAmount,
+      score: Math.min(0.99, 0.65 + Math.max(alert.ratio - 1, 0) * 0.25),
+      severity: alert.ratio >= 1.75 ? "CRITIQUE" : "ALERTE",
+      status: "pending",
+      type: alert.type,
+      message: alert.message,
+      explanation: "Commande: detection basee sur le nombre de commandes et le montant YTD compares aux annees precedentes pour la meme serie.",
+    }));
+  });
+}
+
+function buildLocalDashboardData(invoices, series, config = {}) {
   const byMonth = {};
   const bySupplier = {};
   const alerts = [];
+  const isCommande = invoices.some((inv) => inv.sourceKind === "commande");
   invoices.forEach((inv, i) => {
     const date = inv.date || inv.invoice_date || "";
     const month = date.slice(0, 7);
@@ -313,6 +415,7 @@ function buildLocalDashboardData(invoices, series) {
     const supplier = inv.supplier || inv.supplier_code || "N/A";
     if (month) byMonth[month] = (byMonth[month] || 0) + amount;
     bySupplier[supplier] = (bySupplier[supplier] || 0) + 1;
+    if (isCommande) return;
     const s = series.find((x) => x.supplier === supplier && (x.label || "") === (inv.label || ""));
     const max = (s?.mu || 0) * (1 + (s?.tolerance_pct || 10) / 100);
     if (s && amount > max) {
@@ -328,6 +431,7 @@ function buildLocalDashboardData(invoices, series) {
       });
     }
   });
+  if (isCommande) alerts.push(...buildCommandePatternAlerts(invoices, series, config));
   const months = Object.keys(byMonth).sort();
   return {
     alerts,
@@ -382,9 +486,21 @@ export function PipelineWorkspaceView({
 
   const pipelineConfig = useMemo(() => readConfig(pipeline), [pipeline]);
   const isAutomated = pipelineConfig?.automation?.autoRun === true || pipelineConfig?.automation?.mode === "automated" || pipelineConfig?.executionMode === "automated";
-  const existingInvoices = useMemo(() => pipeline ? invoiceRowsForPipeline(pipeline) : [], [pipeline]);
+  const existingInvoices = useMemo(() => pipeline ? invoiceRowsForPipeline(pipeline, pipelineConfig) : [], [pipeline, pipelineConfig]);
   const existingSeries = useMemo(() => pipeline ? buildLocalSeries(existingInvoices, pipelineConfig) : [], [pipeline, existingInvoices, pipelineConfig]);
-  const existingDashboard = useMemo(() => buildLocalDashboardData(existingInvoices, seriesResult?.series || existingSeries), [existingInvoices, seriesResult, existingSeries]);
+  const currentKind = isCommandePipeline(pipeline, pipelineConfig) ? "commande" : "facture";
+  const cachedSeriesMatchesPipeline = Array.isArray(seriesResult?.series)
+    && seriesResult.series.length > 0
+    && seriesResult.series.every((s) => (s.kind || "facture") === currentKind);
+  const activeSeries = cachedSeriesMatchesPipeline ? seriesResult.series : existingSeries;
+  const activeGroupFields = cachedSeriesMatchesPipeline ? (seriesResult?.groupFields || []) : groupFieldsFromConfig(pipelineConfig, currentKind === "commande" ? ["budgetCode"] : ["supplier_code", "label"]);
+  const existingDashboard = useMemo(() => buildLocalDashboardData(existingInvoices, activeSeries, pipelineConfig), [existingInvoices, activeSeries, pipelineConfig]);
+
+  useEffect(() => {
+    if (seriesResult?.series?.length && !cachedSeriesMatchesPipeline) {
+      setSeriesResult(null);
+    }
+  }, [cachedSeriesMatchesPipeline, seriesResult?.series?.length, setSeriesResult]);
 
   useEffect(() => {
     wsStore.activePipelineId = pipelineId;
@@ -395,9 +511,10 @@ export function PipelineWorkspaceView({
     autoRunStarted.current = true;
     setPage("dashboard-loading");
     const timer = setTimeout(() => {
-      const invoices = invoiceRowsForPipeline(pipeline);
+      const invoices = invoiceRowsForPipeline(pipeline, pipelineConfig);
       wsStore.invoices = invoices;
       const fields = Object.keys(invoices[0] || {});
+      const groupFields = groupFieldsFromConfig(pipelineConfig, currentKind === "commande" ? ["budgetCode"] : ["supplier_code", "label"]);
       const mapping = {
         cols: {
           id: "invoice_ref",
@@ -411,9 +528,9 @@ export function PipelineWorkspaceView({
         statusConfig: pipelineConfig.statusWorkflow || null,
       };
       const series = buildLocalSeries(invoices, pipelineConfig);
-      const dashboard = buildLocalDashboardData(invoices, series);
+      const dashboard = buildLocalDashboardData(invoices, series, pipelineConfig);
       setMappingResult(mapping);
-      setSeriesResult({ series, groupFields: ["supplier_code", "label"] });
+      setSeriesResult({ series, groupFields });
       setFinalResult(dashboard);
       setPage("dashboard");
     }, 1200);
@@ -423,9 +540,10 @@ export function PipelineWorkspaceView({
   useEffect(() => {
     if (!pipeline || page !== "dashboard-loading" || finalResult) return;
     const timer = setTimeout(() => {
-      const invoices = invoiceRowsForPipeline(pipeline);
+      const invoices = invoiceRowsForPipeline(pipeline, pipelineConfig);
       wsStore.invoices = invoices;
       const fields = Object.keys(invoices[0] || {});
+      const groupFields = groupFieldsFromConfig(pipelineConfig, currentKind === "commande" ? ["budgetCode"] : ["supplier_code", "label"]);
       const mapping = {
         cols: {
           id: "invoice_ref",
@@ -439,9 +557,9 @@ export function PipelineWorkspaceView({
         statusConfig: pipelineConfig.statusWorkflow || null,
       };
       const series = buildLocalSeries(invoices, pipelineConfig);
-      const dashboard = buildLocalDashboardData(invoices, series);
+      const dashboard = buildLocalDashboardData(invoices, series, pipelineConfig);
       setMappingResult(mapping);
-      setSeriesResult({ series, groupFields: ["supplier_code", "label"] });
+      setSeriesResult({ series, groupFields });
       setFinalResult(dashboard);
       setPage("dashboard");
     }, 1800);
@@ -590,14 +708,14 @@ export function PipelineWorkspaceView({
     if (page === "seriesConfig")
       return (
         <WSSeriesConfig
-          series={seriesResult?.series || existingSeries}
+          series={activeSeries}
           onConfirm={async (updatedSeries) => {
             if (manageMode) {
-              setSeriesResult({ ...(seriesResult || {}), series: updatedSeries || existingSeries });
+              setSeriesResult({ ...(seriesResult || {}), series: updatedSeries || existingSeries, groupFields: activeGroupFields });
               updatePipelineStore(pipeline.id, {
                 configJson: {
                   ...(pipelineConfig || {}),
-                  seriesOverrides: (updatedSeries || existingSeries).map((item) => ({
+                    seriesOverrides: (updatedSeries || activeSeries).map((item) => ({
                     id: item.id,
                     tolerance_pct: item.tolerance_pct,
                     tolerance_days: item.tolerance_days,
@@ -647,8 +765,9 @@ export function PipelineWorkspaceView({
               setPage("dashboard");
             } catch (e) {
               console.error(e);
-              const s = seriesResult?.series || buildLocalSeries(invoiceRowsForPipeline(pipeline), pipelineConfig);
-              const dashboard = buildLocalDashboardData(invoiceRowsForPipeline(pipeline), s);
+              const localRows = invoiceRowsForPipeline(pipeline, pipelineConfig);
+              const s = activeSeries || buildLocalSeries(localRows, pipelineConfig);
+              const dashboard = buildLocalDashboardData(localRows, s, pipelineConfig);
               setSeriesResult({ ...seriesResult, series: s });
               setFinalResult(dashboard);
               setPage("dashboard");
@@ -670,8 +789,8 @@ export function PipelineWorkspaceView({
           </div>
           <WSFullDashboard
             {...(finalResult || existingDashboard)}
-            series={seriesResult?.series || existingSeries}
-            groupFields={seriesResult?.groupFields || []}
+            series={activeSeries}
+            groupFields={activeGroupFields}
             onReset={reset}
             manageMode={manageMode}
           />

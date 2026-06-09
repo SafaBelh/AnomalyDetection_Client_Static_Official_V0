@@ -953,6 +953,7 @@ function ErpConnectInline({ tenantId, existingConnections = [], onCancel, onDone
   const [connectors, setConnectors] = useState([]);
   const [selectedConnectorId, setSelectedConnectorId] = useState("");
   const [externalId, setExternalId] = useState("");
+  const [erpTenantSearch, setErpTenantSearch] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const selectedConn = connectors.find(c => c.id === selectedConnectorId);
@@ -970,6 +971,11 @@ function ErpConnectInline({ tenantId, existingConnections = [], onCancel, onDone
         .filter((t) => t.id)
       : [];
   }, [selectedConn]);
+  const filteredErpTenantOptions = useMemo(() => {
+    const q = erpTenantSearch.trim().toLowerCase();
+    if (!q) return erpTenantOptions;
+    return erpTenantOptions.filter((t) => `${t.label || ""} ${t.id || ""}`.toLowerCase().includes(q));
+  }, [erpTenantOptions, erpTenantSearch]);
   const selectedErpTenant = erpTenantOptions.find((t) => t.id === externalId);
   const selectedAlreadyLinked = !!selectedConnectorId && !!externalId && isAlreadyLinked(selectedConnectorId, externalId);
   const canLinkSelectedTenant = !!selectedConnectorId && !!externalId && !!selectedErpTenant && selectedErpTenant.active !== false && !selectedAlreadyLinked;
@@ -1034,7 +1040,7 @@ function ErpConnectInline({ tenantId, existingConnections = [], onCancel, onDone
                 return (
                   <div
                     key={conn.id}
-                    onClick={() => { if (!allActiveLinked) { setSelectedConnectorId(conn.id); setExternalId(""); } }}
+                    onClick={() => { if (!allActiveLinked) { setSelectedConnectorId(conn.id); setExternalId(""); setErpTenantSearch(""); } }}
                     style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10, cursor: allActiveLinked ? "not-allowed" : "pointer", border: `1.5px solid ${isSelected ? "#D94F3D" : C.grey100}`, background: isSelected ? "rgba(217,79,61,.06)" : "rgba(107,114,128,.02)", transition: "all .15s", opacity: allActiveLinked ? 0.62 : 1 }}
                   >
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: conn.color ? `linear-gradient(135deg, ${conn.color}, ${conn.color}bb)` : "#64748B", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#fff", flexShrink: 0 }}>{conn.logo || conn.name?.[0] || "?"}</div>
@@ -1063,11 +1069,23 @@ function ErpConnectInline({ tenantId, existingConnections = [], onCancel, onDone
         {selectedConn && (
           <div>
             <label style={{ ...labelStyle, marginBottom: 6 }}>
-              Tenants déclarés par l'ERP <span style={{ color: C.red }}>*</span>
+              Rechercher tenant ERP par nom <span style={{ color: C.red }}>*</span>
             </label>
+            <input
+              value={erpTenantSearch}
+              onChange={e => {
+                const next = e.target.value;
+                setErpTenantSearch(next);
+                const exact = erpTenantOptions.find(t => (t.label || "").toLowerCase() === next.trim().toLowerCase() || t.id.toLowerCase() === next.trim().toLowerCase());
+                setExternalId(exact ? exact.id : "");
+              }}
+              className="input-field"
+              style={{ fontSize: 12, marginBottom: 8 }}
+              placeholder="Tapez le nom du tenant ERP, ex: whitecape ask"
+            />
             {erpTenantOptions.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {erpTenantOptions.map((t) => {
+                {filteredErpTenantOptions.map((t) => {
                   const selected = externalId === t.id;
                   const linkable = t.active !== false;
                   const alreadyLinked = isAlreadyLinked(selectedConnectorId, t.id);
@@ -1075,7 +1093,7 @@ function ErpConnectInline({ tenantId, existingConnections = [], onCancel, onDone
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => { if (!alreadyLinked) setExternalId(t.id); }}
+                      onClick={() => { if (!alreadyLinked) { setExternalId(t.id); setErpTenantSearch(t.label || t.id); } }}
                       disabled={alreadyLinked}
                       style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: `1.5px solid ${alreadyLinked ? C.grey200 : selected ? (linkable ? C.success : C.warning) : C.grey100}`, background: alreadyLinked ? "rgba(107,114,128,.04)" : selected ? (linkable ? "rgba(34,197,94,.06)" : "rgba(245,158,11,.06)") : "rgba(107,114,128,.02)", cursor: alreadyLinked ? "not-allowed" : "pointer", opacity: alreadyLinked ? 0.62 : 1, textAlign: "left", fontFamily: "inherit" }}
                     >
@@ -1090,6 +1108,11 @@ function ErpConnectInline({ tenantId, existingConnections = [], onCancel, onDone
                     </button>
                   );
                 })}
+                {filteredErpTenantOptions.length === 0 && (
+                  <div style={{ padding: 12, borderRadius: 10, background: "rgba(107,114,128,.04)", color: C.grey500, fontSize: 11, lineHeight: 1.5 }}>
+                    Aucun tenant ERP ne correspond à cette recherche. Essayez le nom affiché dans l'ERP ou son identifiant externe.
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ padding: 12, borderRadius: 10, background: "rgba(245,158,11,.06)", border: "1px solid rgba(245,158,11,.2)", color: C.warning, fontSize: 11, lineHeight: 1.5 }}>
@@ -1106,15 +1129,18 @@ function ErpConnectInline({ tenantId, existingConnections = [], onCancel, onDone
 
         <div>
           <label style={{ ...labelStyle, marginBottom: 5 }}>
-            Identifiant externe sélectionné <span style={{ color: C.red }}>*</span>
+            Tenant ERP sélectionné <span style={{ color: C.red }}>*</span>
           </label>
-          <input
-            value={externalId}
-            readOnly
-            className="input-field"
-            style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", background: "rgba(107,114,128,.04)" }}
-            placeholder={selectedConn ? "Sélectionnez un tenant ERP ci-dessus" : "Sélectionnez d'abord un ERP"}
-          />
+          <div style={{ minHeight: 38, padding: "9px 12px", borderRadius: 10, border: `1.5px solid rgba(107,114,128,.18)`, background: "rgba(107,114,128,.04)", fontSize: 11, display: "flex", alignItems: "center", gap: 8 }}>
+            {selectedErpTenant ? (
+              <>
+                <span style={{ fontWeight: 800, color: C.grey900 }}>{selectedErpTenant.label}</span>
+                <span className="mono" style={{ color: C.grey500 }}>ID: {selectedErpTenant.id}</span>
+              </>
+            ) : (
+              <span style={{ color: C.grey400 }}>{selectedConn ? "Recherchez puis choisissez un tenant ERP" : "Sélectionnez d'abord un ERP"}</span>
+            )}
+          </div>
         </div>
 
         <div>

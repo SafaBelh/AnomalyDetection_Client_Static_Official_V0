@@ -115,11 +115,9 @@ export function PipelinesView({ onNavigateToPipeline, onOpenSeriesConfig }) {
           const anomalyCount = invs.filter(
             (i) => i.status === "anomaly"
           ).length;
-          const amounts = invs.map((i) => i.amount);
-          const avgAmt = amounts.length
-            ? amounts.reduce((a, b) => a + b, 0) / amounts.length
-            : 0;
           const anomalyRate = (anomalyCount / Math.max(1, invs.length)) * 100;
+          const tolerancePct = p.tolerancePct ?? p.config?.tolerancePct ?? 15;
+          const toleranceDays = p.toleranceDays ?? p.config?.toleranceDays ?? 45;
           const statusColor =
             p.status === "actif" ? C.success : isError ? C.warning : C.grey400;
           const statusBg =
@@ -289,9 +287,8 @@ export function PipelinesView({ onNavigateToPipeline, onOpenSeriesConfig }) {
                     color: anomalyRate > 3 ? C.red : C.warning,
                   },
                   {
-                    lbl: "Montant moy.",
-                    val: fmtK(Math.round(avgAmt)),
-                    sub: `sur ${invs.length} fact.`,
+                    lbl: "Tolérance",
+                    rows: [`(±) ${tolerancePct}% Montant`, `(±) ${toleranceDays} Jours`],
                     bg: "rgba(59,130,246,.06)",
                     color: C.info,
                   },
@@ -315,18 +312,37 @@ export function PipelinesView({ onNavigateToPipeline, onOpenSeriesConfig }) {
                     >
                       {k.lbl}
                     </div>
-                    <div
-                      style={{
-                        fontFamily: "'Instrument Serif',serif",
-                        fontSize: 22,
-                        color: k.color,
-                        marginTop: 2,
-                        letterSpacing: "-0.5px",
-                      }}
-                    >
-                      {k.val}
-                    </div>
-                    {k.sub && (
+                    {k.rows ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 5 }}>
+                        {k.rows.map((row) => (
+                          <div
+                            key={row}
+                            style={{
+                              fontFamily: "'Instrument Serif',serif",
+                              fontSize: 18,
+                              color: k.color,
+                              letterSpacing: "-0.25px",
+                              lineHeight: 1.08,
+                            }}
+                          >
+                            {row}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          fontFamily: "'Instrument Serif',serif",
+                          fontSize: 22,
+                          color: k.color,
+                          marginTop: 2,
+                          letterSpacing: "-0.5px",
+                        }}
+                      >
+                        {k.val}
+                      </div>
+                    )}
+                    {!k.rows && k.sub && (
                       <div
                         style={{ fontSize: 9, color: C.grey400, marginTop: 1 }}
                       >

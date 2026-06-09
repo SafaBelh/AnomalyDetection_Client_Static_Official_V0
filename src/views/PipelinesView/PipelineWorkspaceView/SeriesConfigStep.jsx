@@ -44,6 +44,11 @@ export function WSSeriesConfig({
   const [seriesInvoices, setSeriesInvoices] = useState([]);
   const [seasonTab, setSeasonTab] = useState("monthly");
   const s = series[selected];
+  useEffect(() => {
+    const next = (Array.isArray(initSeries) ? initSeries : []).map((item) => ({ ...item, _dirty: false, active: item.active !== false }));
+    setSeries(next);
+    setSelected((idx) => Math.min(idx, Math.max(0, next.length - 1)));
+  }, [JSON.stringify((Array.isArray(initSeries) ? initSeries : []).map((item) => [item.id, item.name, item.kind, item.n, item.mu, item.label]))]);
   const update = (idx, patch) => {
     setSeries((arr) => {
       const next = arr.map((x, i) =>

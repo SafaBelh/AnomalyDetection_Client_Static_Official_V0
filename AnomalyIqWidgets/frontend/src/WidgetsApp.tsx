@@ -431,7 +431,7 @@ const baseConfig = {
     background: "#F0EDE8", surface: "rgba(255,255,255,0.72)", surfaceHover: "rgba(217,79,61,0.04)",
     textPrimary: "#18191C", textSecondary: "#525761", textMuted: "#9CA3AF", borderColor: "rgba(255,255,255,0.88)",
     borderRadius: "16px", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    fontFamilyMono: "'JetBrains Mono', 'Fira Code', monospace", companyName: "Ask&Go · Whitecape", welcomeMessage: ""
+    fontFamilyMono: "'JetBrains Mono', 'Fira Code', monospace", companyName: "Ask&Go ERP", welcomeMessage: ""
 };
 const ASKGO_THEME_PRESETS = {
     "AnomalyIQ": { primaryColor: "#D94F3D", primaryDark: "#C84332", accentColor: "#f59e0b", background: "#F0EDE8", surface: "rgba(255,255,255,0.72)", surfaceHover: "rgba(217,79,61,0.04)", textPrimary: "#18191C", textSecondary: "#525761", textMuted: "#9CA3AF", borderColor: "rgba(255,255,255,0.88)", borderRadius: "16px" },
@@ -884,7 +884,7 @@ const Dashboard = () => {
     ];
 
     const activity = [
-        { action: "ERP synchronisé", client: "Ask&Go · Whitecape", time: "2 min", type: "success" },
+        { action: "ERP synchronisé", client: "Ask&Go ERP", time: "2 min", type: "success" },
         { action: "Widget configuré", client: "Score facture", time: "15 min", type: "info" },
         { action: "API key générée", client: "Alertes anomalies", time: "1h", type: "success" },
         { action: "Erreur API", client: "pipeline_askgo", time: "2h", type: "error" },
@@ -1055,6 +1055,7 @@ const ClientDetailPage = ({ clientId }) => {
     const [open, setOpen] = useState(false);
     const [name, setName] = useState("");
     const [type, setType] = useState("askgo-alerts");
+    const catalog = getWidgetCatalog();
 
     if (!client) return <div className="ds-empty"><p>ERP introuvable.</p><Btn style={{ marginTop: 12 }} onClick={() => navigate("/clients")}>Retour</Btn></div>;
 
@@ -1066,6 +1067,19 @@ const ClientDetailPage = ({ clientId }) => {
         navigate(`/configurator/${w.id}`);
     };
 
+    const widgetForType = type => widgets.find(w => w.type === type);
+    const setWidgetEnabled = (catalogItem, enabled) => {
+        const existing = widgetForType(catalogItem.type);
+        if (existing) {
+            updateWidget(existing.id, { status: enabled ? "active" : "paused" });
+            toast({ title: enabled ? "Widget activé" : "Widget désactivé", description: `${catalogItem.name} · ${client.name}` });
+            return;
+        }
+        if (!enabled) return;
+        const created = addWidget(client.id, catalogItem.name, catalogItem.type);
+        toast({ title: "Widget activé", description: `${created.name} ajouté à ${client.name}` });
+    };
+
     return (
         <div className="ds-fadein">
             {open && <ModalPortal>
@@ -1075,7 +1089,7 @@ const ClientDetailPage = ({ clientId }) => {
                         <div style={{ marginBottom: 16 }}>
                             <Label>Type de widget</Label>
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
-                                {getWidgetCatalog().map(m => {
+                                {catalog.map(m => {
                                     const Icon = m.icon; return (
                                         <button key={m.type} onClick={() => setType(m.type)} style={{
                                             textAlign: "left", padding: "12px 14px", borderRadius: 12, cursor: "pointer",
@@ -1116,6 +1130,39 @@ const ClientDetailPage = ({ clientId }) => {
                 {planBadge(client.plan)} {statusBadge(client.status)}
                 <span style={{ fontSize: 12, color: C.grey400, alignSelf: "center" }}>Inscrit le {client.joinDate}</span>
             </div>
+
+            <Card style={{ marginBottom: 16 }}>
+                <SectionTitle>Activation des widgets par ERP</SectionTitle>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
+                    {catalog.map(item => {
+                        const assigned = widgetForType(item.type);
+                        const enabled = assigned?.status === "active";
+                        const Icon = item.icon;
+                        return (
+                            <div key={item.type} style={{ border: `1.5px solid ${enabled ? "rgba(34,197,94,.35)" : assigned ? "rgba(245,158,11,.35)" : C.grey200}`, borderRadius: 14, padding: "13px 14px", background: enabled ? "rgba(34,197,94,.05)" : C.white }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                                    <div style={{ width: 34, height: 34, borderRadius: 9, background: `${item.color}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                        <Icon size={15} color={item.color} />
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: C.grey900 }}>{item.name}</p>
+                                        <p style={{ margin: "2px 0 0", fontSize: 10, color: C.grey400 }}>{assigned ? assigned.name : "Non ajouté à cet ERP"}</p>
+                                    </div>
+                                    {enabled ? <Badge variant="green">actif</Badge> : assigned ? <Badge variant="yellow">pause</Badge> : <Badge variant="grey">absent</Badge>}
+                                </div>
+                                <p style={{ fontSize: 11, color: C.grey500, lineHeight: 1.45, minHeight: 32, marginBottom: 10 }}>{item.description}</p>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                                    <Switch checked={enabled} onCheckedChange={next => setWidgetEnabled(item, next)} />
+                                    <div style={{ display: "flex", gap: 6 }}>
+                                        {assigned && <Btn variant="ghost" style={{ fontSize: 11, padding: "5px 9px" }} onClick={() => navigate(`/configurator/${assigned.id}`)}>Configurer</Btn>}
+                                        {!assigned && <Btn variant="ghost" style={{ fontSize: 11, padding: "5px 9px" }} onClick={() => setWidgetEnabled(item, true)}>Ajouter</Btn>}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </Card>
 
             <Card>
                 <SectionTitle>Widgets ({widgets.length})</SectionTitle>

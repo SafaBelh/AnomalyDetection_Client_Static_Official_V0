@@ -130,15 +130,15 @@ function normalize(data: SaasWidgetData): SaasWidgetData {
     if (clientsById.has(client.id)) clientsById.set(client.id, { ...clientsById.get(client.id), ...client });
   }
   const widgets = (data.widgets ?? [])
-    .filter(widget => widget.clientId === ASKGO_CLIENT_ID && widget.config?.slot)
+    .filter(widget => widget.clientId && widget.config)
     .map(widget => {
       const defaultsForSlot = defaults.widgets.find(defaultWidget => defaultWidget.config.slot === widget.config.slot);
       if (!defaultsForSlot) return widget;
-      return { ...defaultsForSlot, ...widget, config: { ...defaultsForSlot.config, ...widget.config, ...ANOMALYIQ_WIDGET_THEME } };
+      return { ...defaultsForSlot, ...widget, config: { ...defaultsForSlot.config, ...widget.config } };
     });
 
   for (const defaultWidget of defaults.widgets) {
-    if (!widgets.some(widget => widget.id === defaultWidget.id || widget.config?.slot === defaultWidget.config.slot)) {
+    if (!widgets.some(widget => widget.clientId === ASKGO_CLIENT_ID && (widget.id === defaultWidget.id || widget.config?.slot === defaultWidget.config.slot))) {
       widgets.push(defaultWidget);
     }
   }

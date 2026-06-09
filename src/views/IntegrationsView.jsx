@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowRight, Database, GitBranch, ScanLine, ClipboardCheck,
   RefreshCw, Download, FlaskConical, TrendingUp, ChevronRight, ChevronDown,
   AlertCircle, Search, Link2, Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
-  Cpu, Layers, BarChart3, Eye, EyeOff, Zap, Filter, Table2, Map, GripVertical, Hash,
+  Cpu, Layers, BarChart3, Eye, EyeOff, Zap, Filter, Table2, GripVertical, Hash,
   Bot, MessageSquare, FileJson, Send, ChevronUp, Code2, RotateCcw, Wand2,
   Info, Check, ChevronLeft, Copy, Users, Globe, Upload, FileText, AlertTriangle,
   FileBarChart, Activity, Clock, CheckSquare, XCircle, Loader2, Play, ArrowUpRight
@@ -44,6 +44,7 @@ import {
   INTEGRATION_JOIN_TYPES,
   INTEGRATION_REPORT_FALLBACK_TENANTS,
   JSON_IMPORT_TEMPLATE,
+  TENANT_JSON_IMPORT_TEMPLATE,
   VISUAL_JOIN_PALETTE,
   normalizeTableName,
 } from "@/store/staticData";
@@ -381,12 +382,32 @@ function buildReport(a) {
     connection: { type: d.connectionType, jdbcUrl: d.jdbcUrl, jdbcUsername: d.jdbcUsername, jdbcPassword: d.jdbcPassword ? "***" : "", apiEndpoint: d.apiEndpoint, apiResources: d.apiResources || [], csvFiles: d.csvFiles || [] },
     tables: { selected: d.selectedTables, budgetSources: d.budgetSourceTables },
     pipelines: {
-      factures: { enabled: true, sourceTables: d.pipelines.facture.tables, fieldMappings: d.pipelines.facture.fieldMappings },
-      commandes: { enabled: true, sourceTables: d.pipelines.commande.tables, groupBy: d.pipelines.commande.groupByCols }
+      factures: { enabled: true, sourceTables: d.pipelines.facture.tables, fieldMappings: d.pipelines.facture.fieldMappings, groupBy: effectivePipelineGroupBy("facture", d.pipelines.facture) },
+      commandes: { enabled: true, sourceTables: d.pipelines.commande.tables, groupBy: effectivePipelineGroupBy("commande", d.pipelines.commande) }
     },
     budget: { formula: d.budgetFormula },
     tenants: d.tenants.map(t => t.id),
   };
+}
+
+function effectivePipelineGroupBy(key, pipeline = {}) {
+  const explicit = Array.isArray(pipeline.groupByCols) ? pipeline.groupByCols.filter(Boolean) : [];
+  if (key === "commande") {
+    const valid = explicit.filter(col => !/supplier|fournisseur/i.test(String(col)));
+    return valid.length > 0 ? valid : PIPELINE_DEFS.commande.defaultGroupByCols;
+  }
+  if (explicit.length > 0) return explicit;
+  return key === "facture" ? PIPELINE_DEFS.facture.defaultGroupByCols : [];
+}
+
+function preparePipelineTemplates(pipelines = {}) {
+  return Object.fromEntries(Object.entries(pipelines).map(([key, pipeline]) => [
+    key,
+    {
+      ...pipeline,
+      groupByCols: effectivePipelineGroupBy(key, pipeline),
+    },
+  ]));
 }
 
 function computeScore(report) {
@@ -900,7 +921,7 @@ function ERPReportModal({ integration, onClose }) {
     connector: { id: integration.id, name: integration.name, type: integration.connectorType, auth: integration.authType, status: "ACTIVE" },
     tables: selectedTables,
     pipelines: enabledPipelines,
-    tenants: activeTenants.map(t => ({ id: t.id, label: t.label, platformLink: t.platformTenantName || null, status: "ACTIVE" })),
+    tenants: activeTenants.map(t => ({ id: t.id, label: t.label, platformLink: t.platformTenantName || null, storageMode: t.storageMode === "isolated" ? "isolated" : "shared", dbConnection: t.storageMode === "isolated" ? (t.database?.jdbcUrl || null) : null, status: "ACTIVE" })),
     stats: { totalRecords, totalAnomalies, activeTenants: activeTenants.length, linkedTenants: linkedTenants.length },
   }, null, 2);
 
@@ -986,6 +1007,7 @@ function ERPReportModal({ integration, onClose }) {
                     <div style={{ fontSize: 10, color: C.g400 }}>
                       ID: <span className="mono">{t.id}</span>
                       {t.platformTenantName && <> · Lié à: {t.platformTenantName}</>}
+                      <> · {t.storageMode === "isolated" ? "DB isolee" : "DB partagee"}</>
                     </div>
                   </div>
                   {t.active ? (
@@ -1699,32 +1721,54 @@ function PipelinesStep({ data, setData, schema }) {
   const toggleTable = tname => setPl({ ...pl, tables: pl.tables.includes(tname) ? pl.tables.filter(t => t !== tname) : [...pl.tables, tname] });
   const plTables = activeTables.filter(t => (pl.tables || []).includes(t.name));
   const plCols = plTables.flatMap(t => t.cols.map(c => ({ full: `${t.name}.${c}`, table: t.name, col: c })));
-  const fixedFields = builtinDef?.fixedFields || [];
+  const fixedFields = builtinDef?.fixedFields || (!isBuiltin ? [
+    { key: "date", label: "Date", required: true },
+    { key: "amount", label: "Montant", required: true },
+    { key: "status", label: "Statut", required: true },
+  ] : []);
   const userFields = pl.userFields || [];
   const addUserField = () => { const id = `field_${Date.now()}`; setPl({ ...pl, userFields: [...userFields, { id, key: "", label: "", type: "text", required: false }] }); };
   const updateUserField = (id, field, value) => { const nextFields = userFields.map(f => f.id === id ? { ...f, [field]: value } : f); setPl({ ...pl, userFields: nextFields }); };
   const removeUserField = (id) => { const field = userFields.find(f => f.id === id); const nextMappings = { ...(pl.fieldMappings || {}) }; if (field?.key) delete nextMappings[field.key]; setPl({ ...pl, userFields: userFields.filter(f => f.id !== id), fieldMappings: nextMappings }); };
   const setUserFieldMapping = (field, value) => { if (!field.key) return; setPl({ ...pl, fieldMappings: { ...(pl.fieldMappings || {}), [field.key]: value } }); };
   const requiresGroupBy = activeTab !== "facture";
-  const groupByOptions = requiresGroupBy
-    ? activeTab === "commande"
+  const supportsGroupByOverride = activeTab === "facture" || requiresGroupBy;
+  const groupByOptions = supportsGroupByOverride
+    ? activeTab === "facture"
       ? [
         ...fixedFields
-          .filter(f => f.key !== "budgetCode")
-          .map(f => ({ key: f.key, label: f.label, source: "Champ fixe" })),
+          .filter(f => !["invoiceDate", "amount", "status"].includes(f.key))
+          .map(f => ({ key: f.key, label: f.label.replace(/^Groupe:\s*/, ""), source: "Champ standard" })),
         ...userFields
-          .filter(f => f.key && f.key !== "budgetCode")
-          .map(f => ({ key: f.key, label: f.label || f.key, source: "Champ personnalisé" })),
+          .filter(f => f.key)
+          .map(f => ({ key: f.key, label: f.label || f.key, source: "Champ additionnel" })),
+      ]
+      : activeTab === "commande"
+      ? [
+        ...fixedFields
+          .filter(f => !["commandeDate", "amount", "status"].includes(f.key))
+          .map(f => ({ key: f.key, label: f.label.replace(/^Groupe:\s*/, ""), source: "Champ standard" })),
+        ...userFields
+          .filter(f => f.key)
+          .map(f => ({ key: f.key, label: f.label || f.key, source: "Champ additionnel" })),
       ]
       : userFields
         .filter(f => f.key)
-        .map(f => ({ key: f.key, label: f.label || f.key, source: "Champ personnalisé" }))
+        .map(f => ({ key: f.key, label: f.label || f.key, source: "Champ additionnel" }))
     : [];
   const toggleGroupBy = key => {
     const current = Array.isArray(pl.groupByCols) ? pl.groupByCols : [];
     setPl({ ...pl, groupByCols: current.includes(key) ? current.filter(item => item !== key) : [...current, key] });
   };
   const showGroupByError = requiresGroupBy && pl.enabled !== false && (!Array.isArray(pl.groupByCols) || pl.groupByCols.length === 0);
+
+  useEffect(() => {
+    if (activeTab !== "commande" || pl.enabled === false) return;
+    const current = Array.isArray(pl.groupByCols) ? pl.groupByCols.filter(Boolean) : [];
+    const withoutSupplier = current.filter(col => !/supplier|fournisseur/i.test(String(col)));
+    const next = withoutSupplier.length > 0 ? withoutSupplier : PIPELINE_DEFS.commande.defaultGroupByCols;
+    if (next.join("|") !== current.join("|")) setPl({ ...pl, groupByCols: next });
+  }, [activeTab, pl.enabled, pl.groupByCols]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1766,18 +1810,20 @@ function PipelinesStep({ data, setData, schema }) {
           <SectionAccordion icon={<GitBranch size={13} color={plColor} />} title="Mapping des champs">
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {fixedFields.length > 0 && (<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{fixedFields.map(f => (<div key={f.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", background: "rgba(248,247,245,.8)", borderRadius: 9, border: "1px solid #e5e7eb" }}><div style={{ minWidth: 160, flexShrink: 0 }}><div style={{ fontSize: 11, fontWeight: 600, color: C.g800 }}>{f.label}</div>{f.required && <div style={{ fontSize: 9, color: C.red }}>Requis</div>}</div><span style={{ color: C.g300 }}>→</span><select value={(pl.fieldMappings || {})[f.key] || ""} onChange={e => setPl({ ...pl, fieldMappings: { ...(pl.fieldMappings || {}), [f.key]: e.target.value } })} className="select" style={{ flex: 1, fontSize: 11, fontFamily: "'JetBrains Mono',monospace" }}><option value="">-- Sélectionner colonne --</option>{plCols.map(c => <option key={c.full} value={c.full}>{c.full}</option>)}</select>{(pl.fieldMappings || {})[f.key] && <CheckCircle2 size={14} color={C.success} />}</div>))}</div>)}
-              {(fixedFields.length === 0 || builtinDef?.allowExtraFields) && (<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ flex: 1 }}><div style={{ fontSize: 11, fontWeight: 700, color: C.g800 }}>Champs personnalisés</div><div style={{ fontSize: 10, color: C.g400 }}>Définissez les champs du pipeline puis associez-les aux colonnes sources.</div></div><button type="button" onClick={addUserField} className="btn btn-ghost" style={{ fontSize: 11, padding: "6px 10px", borderColor: `${plColor}30`, color: plColor, background: `${plColor}0D` }}><Plus size={12} /> Ajouter un champ</button></div>
+              {(fixedFields.length === 0 || builtinDef?.allowExtraFields || !isBuiltin) && (<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ flex: 1 }}><div style={{ fontSize: 11, fontWeight: 700, color: C.g800 }}>{!isBuiltin ? "Champs de regroupement" : "Champs additionnels"}</div><div style={{ fontSize: 10, color: C.g400 }}>{!isBuiltin ? "Ajoutez uniquement les dimensions qui définissent une série. Le moteur analyse date + montant dans chaque groupe." : "Définissez des champs additionnels puis associez-les aux colonnes sources."}</div></div><button type="button" onClick={addUserField} className="btn btn-ghost" style={{ fontSize: 11, padding: "6px 10px", borderColor: `${plColor}30`, color: plColor, background: `${plColor}0D` }}><Plus size={12} /> Ajouter un champ</button></div>
                 {userFields.length === 0 ? (<div style={{ fontSize: 11, color: C.g400, padding: "10px 12px", background: "rgba(248,247,245,.75)", borderRadius: 9, border: "1px dashed #d1d5db" }}>Aucun champ personnalisé. Ajoutez un champ pour configurer un nouveau pipeline métier.</div>) : userFields.map((field) => (<div key={field.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr 105px 86px 1.25fr 28px", gap: 8, alignItems: "center", padding: "8px 10px", background: "rgba(248,247,245,.8)", borderRadius: 10, border: `1px solid ${plColor}22` }}><input value={field.key} onChange={e => updateUserField(field.id, "key", e.target.value.trim())} className="input mono" style={{ fontSize: 10, height: 34 }} placeholder="cle_champ" /><input value={field.label} onChange={e => updateUserField(field.id, "label", e.target.value)} className="input" style={{ fontSize: 11, height: 34 }} placeholder="Libellé" /><select value={field.type || "text"} onChange={e => updateUserField(field.id, "type", e.target.value)} className="select" style={{ fontSize: 10, height: 34 }}><option value="text">Texte</option><option value="number">Nombre</option><option value="date">Date</option><option value="status">Statut</option><option value="reference">Référence</option></select><label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: C.g600, fontWeight: 700 }}><input type="checkbox" checked={!!field.required} onChange={e => updateUserField(field.id, "required", e.target.checked)} /> Requis</label><select value={(pl.fieldMappings || {})[field.key] || ""} onChange={e => setUserFieldMapping(field, e.target.value)} disabled={!field.key} className="select" style={{ fontSize: 10, height: 34, fontFamily: "'JetBrains Mono',monospace" }}><option value="">-- Colonne source --</option>{plCols.map(c => <option key={c.full} value={c.full}>{c.full}</option>)}</select><button type="button" onClick={() => removeUserField(field.id)} style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid rgba(239,68,68,.18)", background: "rgba(239,68,68,.07)", color: "#dc2626", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={12} /></button></div>))}
               </div>)}
             </div>
           </SectionAccordion>
 
-          {requiresGroupBy && (
-            <SectionAccordion icon={<Layers size={13} color={plColor} />} title="Regroupement des séries" subtitle="Obligatoire pour commandes et pipelines personnalisés">
+          {supportsGroupByOverride && (
+            <SectionAccordion icon={<Layers size={13} color={plColor} />} title="Regroupement des séries" subtitle={activeTab === "facture" ? "Par défaut: fournisseur + label. Une sélection explicite remplace ce défaut." : "Obligatoire pour commandes et pipelines personnalisés"}>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <InfoBox color={showGroupByError ? C.red : C.info}>
-                  Sélectionnez au moins un champ qui définit une série métier. Le moteur détectera les anomalies dans chaque groupe.
+                  {activeTab === "facture"
+                    ? "Le pipeline Factures groupe toujours par fournisseur + label. Si vous sélectionnez des champs ici, ils deviennent le groupement explicite et remplacent fournisseur + label."
+                    : "Sélectionnez au moins un champ qui définit une série métier. Le moteur détectera les anomalies dans chaque groupe."}
                 </InfoBox>
                 {groupByOptions.length === 0 ? (
                   <div style={{ fontSize: 12, color: C.g500, padding: "12px 14px", background: C.g50, borderRadius: 10, border: `1px dashed ${C.g200}` }}>
@@ -1822,17 +1868,68 @@ function TenantsStep({ data, setData }) {
   const allPipelineKeys = { facture: PIPELINE_DEFS.facture, commande: PIPELINE_DEFS.commande, ...Object.fromEntries(customPipelines.map(cp => [cp.id, { label: cp.label, color: cp.color, Icon: Settings2 }])) };
   const [newTenantId, setNewTenantId] = useState("");
   const [newTenantLabel, setNewTenantLabel] = useState("");
+  const [newTenantStorageMode, setNewTenantStorageMode] = useState("shared");
+  const [tenantImportError, setTenantImportError] = useState("");
   const [expandedTenant, setExpandedTenant] = useState(null);
   const [processingTenants, setProcessingTenants] = useState({});
   const [completedTenants, setCompletedTenants] = useState(new Set());
   const platformTenants = useMemo(() => { try { return visibleTenants() || []; } catch (e) { return []; } }, []);
 
+  const buildTenantDefaults = (tenant = {}) => ({
+    id: tenant.id || "",
+    label: tenant.label || tenant.id || "",
+    active: tenant.active === true,
+    platformTenantId: tenant.platformTenantId || null,
+    platformTenantName: tenant.platformTenantName || null,
+    storageMode: tenant.storageMode === "isolated" ? "isolated" : "shared",
+    database: {
+      jdbcUrl: tenant.database?.jdbcUrl || tenant.jdbcUrl || "",
+      jdbcUsername: tenant.database?.jdbcUsername || tenant.jdbcUsername || "",
+      jdbcPassword: tenant.database?.jdbcPassword || tenant.jdbcPassword || "",
+    },
+    statuses: {
+      ...Object.fromEntries(Object.keys(allPipelineKeys).map(k => [k, { provisional: [], final: [], statusColumn: "" }])),
+      ...(tenant.statuses || {}),
+    },
+  });
+
   const addTenant = () => {
     if (!newTenantId.trim()) return;
     const id = newTenantId.trim();
     const label = newTenantLabel.trim() || id;
-    const next = [...tenants, { id, label, active: false, platformTenantId: null, platformTenantName: null, statuses: Object.fromEntries(Object.keys(allPipelineKeys).map(k => [k, { provisional: [], final: [], statusColumn: "" }])) }];
-    setData({ ...data, tenants: next }); setNewTenantId(""); setNewTenantLabel("");
+    const next = [...tenants.filter(t => t.id !== id), buildTenantDefaults({ id, label, storageMode: newTenantStorageMode })];
+    setData({ ...data, tenants: next }); setNewTenantId(""); setNewTenantLabel(""); setNewTenantStorageMode("shared");
+  };
+
+  const importTenantsFromJson = async (file) => {
+    if (!file) return;
+    try {
+      setTenantImportError("");
+      const parsed = JSON.parse(await file.text());
+      const list = Array.isArray(parsed) ? parsed : parsed.tenants;
+      if (!Array.isArray(list)) throw new Error("Format attendu: { tenants: [...] } ou un tableau JSON.");
+      const imported = list.map(item => buildTenantDefaults(typeof item === "string" ? { id: item, label: item } : item)).filter(t => t.id);
+      if (!imported.length) throw new Error("Aucun tenant valide trouve dans le fichier.");
+      const byId = new Map(tenants.map(t => [t.id, t]));
+      imported.forEach(t => byId.set(t.id, { ...(byId.get(t.id) || {}), ...t }));
+      setData({ ...data, tenants: [...byId.values()] });
+      toast(`${imported.length} tenant(s) importes depuis JSON`, "success");
+    } catch (e) {
+      setTenantImportError(e.message || "JSON invalide");
+      toast("Import tenants JSON invalide", "error");
+    }
+  };
+
+  const downloadTenantJsonTemplate = () => {
+    const blob = new Blob([JSON.stringify(TENANT_JSON_IMPORT_TEMPLATE, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "tenant-import-template.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   const removeTenant = id => setData({ ...data, tenants: tenants.filter(t => t.id !== id) });
@@ -1842,6 +1939,11 @@ function TenantsStep({ data, setData }) {
     if (!resolvePlatformTenant(tenant, platformTenants)) {
       setExpandedTenant(id);
       toast("Liez d'abord cet ID ERP à un tenant plateforme.", "warning");
+      return;
+    }
+    if (tenant.storageMode === "isolated" && (!tenant.database?.jdbcUrl || !tenant.database?.jdbcUsername || !tenant.database?.jdbcPassword)) {
+      setExpandedTenant(id);
+      toast("Renseignez les details DB du tenant isole avant activation.", "warning");
       return;
     }
     setProcessingTenants(prev => ({ ...prev, [id]: true }));
@@ -1863,6 +1965,8 @@ function TenantsStep({ data, setData }) {
     setData({ ...data, tenants: tenants.map(t => t.id === erpId ? { ...t, platformTenantId: pt ? pt.id : null, platformTenantName: pt ? pt.name : null } : t) });
   };
 
+  const updateTenant = (tenantId, patch) => setData({ ...data, tenants: tenants.map(t => t.id === tenantId ? { ...t, ...patch } : t) });
+  const updateTenantDatabase = (tenantId, field, value) => setData({ ...data, tenants: tenants.map(t => t.id === tenantId ? { ...t, database: { ...(t.database || {}), [field]: value } } : t) });
   const updateTenantStatus = (tenantId, pipeline, field, value) => setData({ ...data, tenants: tenants.map(t => t.id === tenantId ? { ...t, statuses: { ...t.statuses, [pipeline]: { ...(t.statuses?.[pipeline] || {}), [field]: value } } } : t) });
 
   const enabledPipelineNames = Object.entries(allPipelineKeys).filter(([k]) => (data.pipelines?.[k] || {}).enabled !== false).map(([, def]) => def.label || k);
@@ -1870,13 +1974,34 @@ function TenantsStep({ data, setData }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <InfoBox color={C.info}>
-        Ajoutez les IDs externes des tenants ERP, liez-les aux tenants plateforme, puis activez-les un par un pour déclencher l'initialisation complète.
+        Ajoutez les IDs externes des tenants ERP, importez-les depuis JSON si le client en a beaucoup, puis marquez les tenants en base partagee ou isolee.
       </InfoBox>
 
+      <div style={{ padding: 12, borderRadius: 12, border: `1px solid ${C.g200}`, background: C.g50, display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.g700, display: "flex", alignItems: "center", gap: 6 }}><FileJson size={13} color={C.info} /> Import tenants JSON</div>
+          <div style={{ marginTop: 4, fontSize: 11, color: C.g500 }}>Téléchargez le format attendu, remplissez-le, puis importez le fichier JSON directement.</div>
+          {tenantImportError && <div style={{ marginTop: 6, fontSize: 11, color: C.red }}>{tenantImportError}</div>}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <button type="button" className="btn btn-ghost" onClick={downloadTenantJsonTemplate} style={{ justifyContent: "center" }}>
+            <Download size={13} /> Télécharger format
+          </button>
+          <label className="btn btn-ghost" style={{ cursor: "pointer", justifyContent: "center" }}>
+            <Upload size={13} /> Importer fichier
+            <input type="file" accept="application/json,.json" hidden onChange={e => { importTenantsFromJson(e.target.files?.[0]); e.target.value = ""; }} />
+          </label>
+        </div>
+      </div>
+
       {/* Add tenant */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 150px auto", gap: 8, alignItems: "center" }}>
         <input value={newTenantId} onChange={e => setNewTenantId(e.target.value)} onKeyDown={e => e.key === "Enter" && addTenant()} className="input" placeholder="ID externe ERP (ex: CORP_001)" style={{ flex: 1 }} />
         <input value={newTenantLabel} onChange={e => setNewTenantLabel(e.target.value)} onKeyDown={e => e.key === "Enter" && addTenant()} className="input" placeholder="Libellé (optionnel)" style={{ flex: 1 }} />
+        <select className="select" value={newTenantStorageMode} onChange={e => setNewTenantStorageMode(e.target.value)}>
+          <option value="shared">DB partagee</option>
+          <option value="isolated">DB isolee</option>
+        </select>
         <button className="btn btn-primary" onClick={addTenant} disabled={!newTenantId.trim()}><Plus size={13} /> Ajouter</button>
       </div>
 
@@ -1888,6 +2013,8 @@ function TenantsStep({ data, setData }) {
         const isActive = tenant.active;
         const linkedPlatformTenant = resolvePlatformTenant(tenant, platformTenants);
         const isLinked = !!linkedPlatformTenant;
+        const isIsolated = tenant.storageMode === "isolated";
+        const isolatedDbReady = !isIsolated || !!(tenant.database?.jdbcUrl && tenant.database?.jdbcUsername && tenant.database?.jdbcPassword);
 
         return (
           <div key={tenant.id} style={{ border: `1px solid ${isActive ? "rgba(34,197,94,.25)" : isProcessing ? "rgba(59,130,246,.3)" : C.g200}`, borderRadius: 14, overflow: "hidden", background: "#fff" }}>
@@ -1905,6 +2032,7 @@ function TenantsStep({ data, setData }) {
                   {isLinked && (
                     <span style={{ marginLeft: 6, color: C.success }}>· Lié à {linkedPlatformTenant?.name || tenant.platformTenantName}</span>
                   )}
+                  <span style={{ marginLeft: 6, color: isIsolated ? C.warning : C.info }}>· {isIsolated ? "DB isolee" : "DB partagee"}</span>
                 </div>
               </div>
 
@@ -1920,6 +2048,11 @@ function TenantsStep({ data, setData }) {
                     LIÉ
                   </span>
                 )}
+                {isIsolated && (
+                  <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 99, background: C.warningLight, color: "#92400e", fontWeight: 700, border: "1px solid rgba(245,158,11,.25)" }}>
+                    DB ISOLEE{isolatedDbReady ? "" : " INCOMPLETE"}
+                  </span>
+                )}
                 {!isActive && !isProcessing && !isCompleted && (
                   <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 99, background: C.g100, color: C.g400, fontWeight: 700, border: `1px solid ${C.g200}` }}>
                     INACTIF
@@ -1931,8 +2064,8 @@ function TenantsStep({ data, setData }) {
                 <button
                   type="button"
                   onClick={e => { e.stopPropagation(); isActive ? deactivateTenant(tenant.id) : activateTenant(tenant.id); }}
-                  title={isActive ? "Désactiver le tenant" : isLinked ? "Activer le tenant" : "Lier au tenant plateforme avant activation"}
-                  style={{ width: 48, height: 26, borderRadius: 99, border: `1px solid ${isActive ? C.successBorder : C.g200}`, background: isActive ? C.successLight : C.g100, cursor: !isActive && !isLinked ? "not-allowed" : "pointer", opacity: !isActive && !isLinked ? .55 : 1, padding: 3, display: "flex", alignItems: "center", justifyContent: isActive ? "flex-end" : "flex-start", transition: "all .18s", flexShrink: 0 }}
+                  title={isActive ? "Désactiver le tenant" : !isLinked ? "Lier au tenant plateforme avant activation" : !isolatedDbReady ? "Renseigner la DB isolee avant activation" : "Activer le tenant"}
+                  style={{ width: 48, height: 26, borderRadius: 99, border: `1px solid ${isActive ? C.successBorder : C.g200}`, background: isActive ? C.successLight : C.g100, cursor: !isActive && (!isLinked || !isolatedDbReady) ? "not-allowed" : "pointer", opacity: !isActive && (!isLinked || !isolatedDbReady) ? .55 : 1, padding: 3, display: "flex", alignItems: "center", justifyContent: isActive ? "flex-end" : "flex-start", transition: "all .18s", flexShrink: 0 }}
                 >
                   <span style={{ width: 18, height: 18, borderRadius: "50%", background: isActive ? C.success : C.g300, boxShadow: "0 2px 5px rgba(0,0,0,.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", transition: "all .18s" }}>
                     {isActive ? <Check size={11} /> : <Play size={9} />}
@@ -1979,6 +2112,18 @@ function TenantsStep({ data, setData }) {
                       platformTenants={platformTenants}
                       onLink={(pt) => linkPlatformTenant(tenant.id, pt)}
                     />
+                  </div>
+                )}
+
+                {isIsolated && (
+                  <div style={{ marginBottom: 14, padding: 12, borderRadius: 12, border: "1px solid rgba(245,158,11,.28)", background: C.warningLight }}>
+                    <label className="label">Connexion DB isolee du tenant</label>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8 }}>
+                      <input className="input mono" value={tenant.database?.jdbcUrl || ""} onChange={e => updateTenantDatabase(tenant.id, "jdbcUrl", e.target.value)} placeholder="jdbc:postgresql://host:5432/client_db" />
+                      <input className="input" value={tenant.database?.jdbcUsername || ""} onChange={e => updateTenantDatabase(tenant.id, "jdbcUsername", e.target.value)} placeholder="DB user" />
+                      <input className="input" type="password" value={tenant.database?.jdbcPassword || ""} onChange={e => updateTenantDatabase(tenant.id, "jdbcPassword", e.target.value)} placeholder="DB password" />
+                    </div>
+                    <div style={{ marginTop: 7, fontSize: 10, color: "#92400e" }}>Schema identique a la base partagee: seules les informations de connexion DB sont requises.</div>
                   </div>
                 )}
 
@@ -2135,7 +2280,7 @@ function SummaryStep({ data, onSave, onDelete, initialData }) {
     ["Connexion", `${(data.connectionType || "jdbc").toUpperCase()} · ${connectionDetail}`],
     ["Tables", (data.selectedTables || []).length + " table(s)"],
     ["Pipelines", enabledPl.join(" · ") || "—"],
-    ["Tenants", `${tenants.length} tenant(s)${tenants.filter(t => t.platformTenantId).length > 0 ? " · " + tenants.filter(t => t.platformTenantId).length + " lié(s)" : ""}`],
+    ["Tenants", `${tenants.length} tenant(s)${tenants.filter(t => t.platformTenantId).length > 0 ? " · " + tenants.filter(t => t.platformTenantId).length + " lié(s)" : ""}${tenants.filter(t => t.storageMode === "isolated").length > 0 ? " · " + tenants.filter(t => t.storageMode === "isolated").length + " DB isolée(s)" : ""}`],
     ["Tenants actifs", `${tenants.filter(t => t.active).length} / ${tenants.length}`],
     ["Données test", data.generatedData && Object.keys(data.generatedData).length > 0 ? "✓ Générées" : "Non générées"],
     ["Budget", data.budgetFormula?.length > 0 ? "✓ Configuré" : "Non configuré"],
@@ -2549,7 +2694,22 @@ function publishErpConnectorsForWidgets(connectors) {
         type: c.type || "ERP",
         authType: c.authType,
         description: c.description,
+        connectionType: c.connectionType,
+        jdbcUrl: c.jdbcUrl,
+        jdbcUsername: c.jdbcUsername,
+        jdbcPassword: c.jdbcPassword,
+        jdbcDriverClassName: c.jdbcDriverClassName,
+        apiEndpoint: c.apiEndpoint,
+        apiAuthToken: c.apiAuthToken,
+        apiResources: c.apiResources || [],
+        csvFiles: c.csvFiles || [],
         selectedTables: c.selectedTables || [],
+        pipelines: c.pipelines || {},
+        pipelineTemplatesJson: c.pipelineTemplatesJson,
+        tableRoles: c.tableRoles || {},
+        budgetSourceTables: c.budgetSourceTables || [],
+        budgetFormula: c.budgetFormula || [],
+        customPipelines: c.customPipelines || [],
         tenants: c.tenants || [],
       }));
     localStorage.setItem(WIDGETS_ERP_STORAGE_KEY, JSON.stringify(erps));
@@ -2558,11 +2718,31 @@ function publishErpConnectorsForWidgets(connectors) {
   }
 }
 
+function hydrateStoredConnector(connector) {
+  const base = DEMO_CONNECTORS.find(c => c.id === connector?.id);
+  if (!base) return connector;
+  const merged = { ...base, ...connector };
+  if (base.jdbcUrl && (!connector.jdbcUrl || connector.connectionType === "csv")) {
+    return {
+      ...merged,
+      connectionType: "jdbc",
+      jdbcUrl: base.jdbcUrl,
+      jdbcUsername: connector.jdbcUsername || base.jdbcUsername,
+      jdbcPassword: connector.jdbcPassword || base.jdbcPassword,
+      selectedTables: connector.selectedTables?.length ? connector.selectedTables : base.selectedTables,
+      pipelines: Object.keys(connector.pipelines || {}).length ? connector.pipelines : base.pipelines,
+      tableRoles: Object.keys(connector.tableRoles || {}).length ? connector.tableRoles : base.tableRoles,
+      budgetSourceTables: connector.budgetSourceTables?.length ? connector.budgetSourceTables : base.budgetSourceTables,
+    };
+  }
+  return merged;
+}
+
 function readPublishedErpConnectors() {
   try {
     const raw = localStorage.getItem(WIDGETS_ERP_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
-    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(hydrateStoredConnector);
   } catch {}
   return null;
 }
@@ -2591,7 +2771,8 @@ export function IntegrationsView() {
   }, [connectors]);
 
   const handleSave = d => {
-    const saved = { ...d, pipelineTemplatesJson: JSON.stringify(d.pipelines || CONNECTOR_CONFIG.step7_templates) };
+    const pipelines = preparePipelineTemplates(d.pipelines || CONNECTOR_CONFIG.step7_templates);
+    const saved = { ...d, pipelines, pipelineTemplatesJson: JSON.stringify(pipelines) };
     if (saved.id) {
       setConnectors(prev => prev.map(c => c.id === saved.id ? { ...c, ...saved } : c));
       const raw = CONNECTORS_TABLE.find(c => c.id === saved.id);
@@ -2607,9 +2788,9 @@ export function IntegrationsView() {
   const handleAssistantAutofill = (d) => { setAssistantHasData(true); setModal(d); };
 
   const handleSyncTemplates = (integration) => {
-    const connTemplates = integration.pipelineTemplatesJson
+    const connTemplates = preparePipelineTemplates(integration.pipelineTemplatesJson
       ? JSON.parse(integration.pipelineTemplatesJson)
-      : (integration.pipelines || CONNECTOR_CONFIG.step7_templates);
+      : (integration.pipelines || CONNECTOR_CONFIG.step7_templates));
     const savedTemplatesJson = JSON.stringify(connTemplates);
     setConnectors(prev => prev.map(c => c.id === integration.id ? { ...c, ...integration, pipelineTemplatesJson: savedTemplatesJson } : c));
     const raw = CONNECTORS_TABLE.find(c => c.id === integration.id);
@@ -2649,6 +2830,7 @@ export function IntegrationsView() {
             joins: tmpl.joins || [],
             conditions: tmpl.conditions || [],
             fieldMappings: tmpl.fieldMappings || {},
+            groupByCols: effectivePipelineGroupBy(k, tmpl),
           }),
         };
         createPipelineStore(newPipe);
